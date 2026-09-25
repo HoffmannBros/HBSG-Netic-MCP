@@ -16,6 +16,7 @@ CLAUDE.md
 .claude/
 .git/
 .gitignore
+.gitattributes
 smoke-output/
 probe-output/
 

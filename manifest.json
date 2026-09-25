@@ -1,0 +1,122 @@
+{
+  "manifest_version": "0.4",
+  "name": "hbsg-netic",
+  "display_name": "Netic (Hoffmann Brothers)",
+  "version": "0.1.0",
+  "description": "Read Netic AI agent and online booking data: inbound interactions, bookings, scheduler sessions, outbound calls, counts, and exports.",
+  "long_description": "Connects Claude to the Netic Reports Export API for Hoffmann Brothers' brands. Ask how many calls the Netic agent booked by lead source, where online scheduler sessions drop off, which technicians turned leads, or what outbound CSR calls were about, for any date range. Counts walk every page, and exports write CSV or JSON files of any size. Read-only: the extension never creates leads or changes anything in Netic.\n\nSetup: Netic issues one token per tenant. Fill in a name and token for each tenant you use (the names default to stl, nash, blue, and ferg). Tokens are stored in your OS keychain. Leave unused slots blank.\n\nExports are saved to the export folder you choose (default: Documents/Netic Reports).",
+  "author": {
+    "name": "Justin Schmidt",
+    "email": "justin+ai@justinschmidt.me"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HoffmannBros/HBSG-Netic-MCP.git"
+  },
+  "support": "https://github.com/HoffmannBros/HBSG-Netic-MCP/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.cjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.cjs"],
+      "env": {
+        "NETIC_TENANT_SLOT1_NAME": "${user_config.tenant1_name}",
+        "NETIC_TENANT_SLOT1_TOKEN": "${user_config.tenant1_token}",
+        "NETIC_TENANT_SLOT2_NAME": "${user_config.tenant2_name}",
+        "NETIC_TENANT_SLOT2_TOKEN": "${user_config.tenant2_token}",
+        "NETIC_TENANT_SLOT3_NAME": "${user_config.tenant3_name}",
+        "NETIC_TENANT_SLOT3_TOKEN": "${user_config.tenant3_token}",
+        "NETIC_TENANT_SLOT4_NAME": "${user_config.tenant4_name}",
+        "NETIC_TENANT_SLOT4_TOKEN": "${user_config.tenant4_token}",
+        "NETIC_OUTPUT_DIR": "${user_config.output_dir}"
+      }
+    }
+  },
+  "tools": [
+    { "name": "netic_list_tenants", "description": "List the configured Netic tenant names" },
+    { "name": "netic_get_interactions", "description": "Inbound calls, texts, and recapture texts handled by Netic" },
+    { "name": "netic_get_scheduler_sessions", "description": "Online scheduler sessions, booked and abandoned" },
+    { "name": "netic_get_scheduler_bookings", "description": "Jobs booked through the online scheduler" },
+    { "name": "netic_get_tgl_bookings", "description": "Technician turn-the-lead bookings" },
+    { "name": "netic_get_referrer_bookings", "description": "Referrer (RGL) bookings" },
+    { "name": "netic_get_outbound_calls", "description": "Outbound CSR calls with summaries and optional transcripts" },
+    { "name": "netic_count", "description": "Count every row of a report grouped by up to three columns" },
+    { "name": "netic_export", "description": "Write every row of a report to a CSV or JSON file" },
+    { "name": "netic_api_call", "description": "Call a Netic report path directly (GET only)" }
+  ],
+  "keywords": ["netic", "ai agent", "booking", "scheduler", "hoffmann", "csv"],
+  "license": "UNLICENSED",
+  "compatibility": {
+    "platforms": ["darwin", "win32"],
+    "runtimes": {
+      "node": ">=20.0.0"
+    }
+  },
+  "user_config": {
+    "tenant1_name": {
+      "type": "string",
+      "title": "Tenant 1 name",
+      "description": "Short name you will use for this tenant, e.g. stl (Hoffmann STL).",
+      "required": false,
+      "default": "stl"
+    },
+    "tenant1_token": {
+      "type": "string",
+      "title": "Tenant 1 token",
+      "description": "Netic API token for tenant 1. Stored in your OS keychain. Leave blank if unused.",
+      "sensitive": true,
+      "required": false
+    },
+    "tenant2_name": {
+      "type": "string",
+      "title": "Tenant 2 name",
+      "description": "e.g. nash (Hoffmann NSH).",
+      "required": false,
+      "default": "nash"
+    },
+    "tenant2_token": {
+      "type": "string",
+      "title": "Tenant 2 token",
+      "description": "Netic API token for tenant 2. Leave blank if unused.",
+      "sensitive": true,
+      "required": false
+    },
+    "tenant3_name": {
+      "type": "string",
+      "title": "Tenant 3 name",
+      "description": "e.g. blue (Blue Sky).",
+      "required": false,
+      "default": "blue"
+    },
+    "tenant3_token": {
+      "type": "string",
+      "title": "Tenant 3 token",
+      "description": "Netic API token for tenant 3. Leave blank if unused.",
+      "sensitive": true,
+      "required": false
+    },
+    "tenant4_name": {
+      "type": "string",
+      "title": "Tenant 4 name",
+      "description": "e.g. ferg (Ferguson STL).",
+      "required": false,
+      "default": "ferg"
+    },
+    "tenant4_token": {
+      "type": "string",
+      "title": "Tenant 4 token",
+      "description": "Netic API token for tenant 4. Leave blank if unused.",
+      "sensitive": true,
+      "required": false
+    },
+    "output_dir": {
+      "type": "directory",
+      "title": "Export folder",
+      "description": "Where CSV and JSON exports are saved.",
+      "required": false,
+      "default": "${DOCUMENTS}/Netic Reports"
+    }
+  }
+}

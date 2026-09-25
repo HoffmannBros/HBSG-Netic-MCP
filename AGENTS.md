@@ -32,10 +32,14 @@ bearer JWT per tenant. TypeScript, Node, MCP SDK 1.x, bundled by esbuild into
 |---|---|
 | `src/index.ts` | Server entry, `INSTRUCTIONS`, tool registration |
 | `src/config.ts` | Tenant loader (`.env` style and manifest slots), path token expansion |
-| `src/client.ts` | GET-only Netic client, one per tenant; preflight, hints, errors |
-| `src/endpoints.ts` | The six report endpoints and their paths |
+| `src/context.ts` | One client per tenant; `clientFor` refuses unknown tenants |
+| `src/client.ts` | GET-only Netic client; path guard, preflight, hints, errors |
+| `src/endpoints.ts` | The six report endpoints, their paths and default columns |
+| `src/dates.ts` | Inclusive-range validation |
 | `src/paging.ts` | Auto-paging over the `{data, pagination}` envelope |
-| `src/format.ts` | Markdown tables, result footer, error text |
+| `src/rows.ts`, `src/aggregate.ts` | `where` filter, column choice, grouped counts |
+| `src/csv.ts` | Streaming CSV and JSON export spool |
+| `src/format.ts` | Markdown tables, the result footer, error text |
 | `src/tools/*.ts` | tenants, reports, aggregate (count), export, raw |
 | `src/schema-compat.ts` | Restamps tool schemas as JSON Schema 2020-12 |
 | `scripts/probe.ts` | Live spec-versus-API checks |
