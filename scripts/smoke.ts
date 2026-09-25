@@ -67,6 +67,13 @@ try {
   await call("netic_get_tgl_bookings", { ...range, max_rows: 5, fields: ["booked_at", "date", "job_type_name", "service_type", "outcome_type"] });
   await call("netic_get_referrer_bookings", { ...range, max_rows: 5, fields: ["booked_at", "job_type", "status"] });
   await call("netic_get_outbound_calls", { ...range, max_rows: 5, fields: ["call_placed_at", "call_type", "call_reason", "call_duration_seconds"] });
+  await call("netic_get_utilization", { tenant, start: end, end, max_rows: 50 });
+  await call("netic_get_utilization", { tenant, start: end, end, snapshot_date: start, snapshot_time: "08:00", type: "group" });
+  await call("netic_get_utilization", { tenant, start: addDays(end, -44), end, type: "group", max_rows: 5 });
+  await call("netic_count", { ...range, report: "utilization", aggregate: "sum", group_by: ["type", "name"], top: 20 });
+  await call("netic_count", { ...range, report: "utilization", aggregate: "sum", group_by: ["date"], where: { type: "business_unit" } });
+  await call("netic_get_utilization", { tenant, start: end, end, snapshot_time: "08:00" }, true);
+  await call("netic_count", { ...range, report: "interactions", aggregate: "sum", modality: "call", group_by: ["category"] }, true);
   await call("netic_count", { ...range, report: "interactions", modality: "call", group_by: ["category", "leadSource"], top: 15 });
   await call("netic_count", { ...range, report: "scheduler_sessions", group_by: ["status", "last_step"] });
   await call("netic_export", { ...range, report: "interactions", modality: "call", filename: `smoke_${tenant}_interactions` });

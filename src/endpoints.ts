@@ -1,4 +1,4 @@
-/** The six report endpoints in docs/vendor/netic-openapi.yaml. All are GET. */
+/** The report endpoints: six in docs/vendor/netic-openapi.yaml, plus utilization. All are GET. */
 
 export const PATH_PREFIX = "/api/public/metrics/";
 
@@ -12,12 +12,27 @@ export const REPORTS = [
   "tgl_bookings",
   "referrer_bookings",
   "outbound_calls",
+  "utilization",
 ] as const;
 export type Report = (typeof REPORTS)[number];
+
+export interface DateParams {
+  start: string;
+  end: string;
+}
+
+/** The six spec endpoints filter on creation date. */
+export const CREATED_DATE_PARAMS: DateParams = { start: "createdOnOrAfter", end: "createdBefore" };
 
 export interface ReportInfo {
   path: string;
   label: string;
+  /** The API's names for the inclusive start and end dates. */
+  dateParams: DateParams;
+  /** Longest inclusive range one request may span; longer ranges are split. */
+  maxRangeDays?: number;
+  /** Identity of a row, for dropping duplicates when a range is split. */
+  rowKey?: (row: Record<string, unknown>) => string;
   /**
    * Columns worth showing inline when the caller names none. Union across the
    * provider-specific row shapes; only the ones present in the rows are used.
@@ -29,6 +44,7 @@ export const REPORT_INFO: Record<Report, ReportInfo> = {
   interactions: {
     path: "/api/public/metrics/interactions",
     label: "inbound interactions",
+    dateParams: CREATED_DATE_PARAMS,
     defaultColumns: [
       "date",
       "phoneNumber",
@@ -49,6 +65,7 @@ export const REPORT_INFO: Record<Report, ReportInfo> = {
   scheduler_sessions: {
     path: "/api/public/metrics/scheduler/sessions",
     label: "online scheduler sessions",
+    dateParams: CREATED_DATE_PARAMS,
     defaultColumns: [
       "session_created_at",
       "status",
@@ -71,6 +88,7 @@ export const REPORT_INFO: Record<Report, ReportInfo> = {
   scheduler_bookings: {
     path: "/api/public/metrics/bookings/scheduler",
     label: "online scheduler bookings",
+    dateParams: CREATED_DATE_PARAMS,
     defaultColumns: [
       "session_created_at",
       "booked_job_created_at",
@@ -91,6 +109,7 @@ export const REPORT_INFO: Record<Report, ReportInfo> = {
   tgl_bookings: {
     path: "/api/public/metrics/bookings/technician-tgl",
     label: "technician TGL bookings",
+    dateParams: CREATED_DATE_PARAMS,
     defaultColumns: [
       "booked_at",
       "date",
@@ -109,11 +128,13 @@ export const REPORT_INFO: Record<Report, ReportInfo> = {
   referrer_bookings: {
     path: "/api/public/metrics/bookings/referrer",
     label: "referrer (RGL) bookings",
+    dateParams: CREATED_DATE_PARAMS,
     defaultColumns: ["booked_at", "referrer_email", "st_job_id", "job_type", "customer_name", "appointment_date", "status"],
   },
   outbound_calls: {
     path: "/api/public/metrics/calls/outbound",
     label: "outbound CSR calls",
+    dateParams: CREATED_DATE_PARAMS,
     defaultColumns: [
       "call_placed_at",
       "agent_name",
@@ -126,7 +147,34 @@ export const REPORT_INFO: Record<Report, ReportInfo> = {
       "summary",
     ],
   },
+  utilization: {
+    path: "/api/public/metrics/utilization",
+    label: "utilization board rows",
+    dateParams: { start: "startDate", end: "endDate" },
+    // Live 2026-09-25: 31 inclusive days is accepted, 32 is a 400.
+    maxRangeDays: 31,
+    rowKey: (r) => [r.date, r.type, r.name, r.businessUnitId].map((v) => String(v ?? "")).join("|"),
+    defaultColumns: [
+      "date",
+      "type",
+      "name",
+      "board",
+      "percentBooked",
+      "jobs",
+      "jobHours",
+      "availableHours",
+      "shiftHours",
+      "nonJobHours",
+      "groups",
+      "businessUnitId",
+    ],
+  },
 };
+
+export const UTILIZATION_PATH = REPORT_INFO.utilization.path;
+
+/** Per-row hour and job fields on utilization, which sum across days. */
+export const UTILIZATION_SUM_FIELDS = ["jobs", "jobHours", "shiftHours", "nonJobHours", "availableHours"] as const;
 
 /** Large text columns on outbound calls, dropped unless asked for. */
 export const TRANSCRIPT_COLUMNS = ["transcript", "analysis"] as const;

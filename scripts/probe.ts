@@ -2,7 +2,7 @@
  * Check docs/vendor/netic-openapi.yaml against the live API for every tenant
  * in .env. GET only, and never web/leads: typed calls go through NeticClient,
  * and the few deliberately invalid calls go through rawGet, which accepts only
- * the six report paths.
+ * the report paths.
  *
  * Raw responses (customer PII) go to probe-output/<date>/<tenant>/, which is
  * gitignored. The console and summary.json carry only key names, types,
@@ -63,7 +63,7 @@ interface RawResponse {
 
 /**
  * GET a report path without the client's preflight, for the checks that must
- * send invalid parameters. Only the six report paths are accepted.
+ * send invalid parameters. Only the report paths are accepted.
  */
 async function rawGet(tenant: TenantConfig | undefined, reportPath: string, params: QueryParams): Promise<RawResponse> {
   assertAllowedPath(reportPath);
@@ -128,6 +128,7 @@ const SPEC_KEYS: Record<Report, (row: Row | undefined) => string[]> = {
   tgl_bookings: (row) => (row && "outcome_type" in row ? SPEC.TGL_CARGAS_KEYS : SPEC.TGL_SERVICETITAN_KEYS),
   referrer_bookings: () => SPEC.REFERRER_KEYS,
   outbound_calls: () => SPEC.OUTBOUND_KEYS,
+  utilization: () => SPEC.UTILIZATION_KEYS,
 };
 
 /** MM/dd/yyyy HH:mm -> YYYY-MM-DD, or undefined. */
@@ -252,6 +253,37 @@ async function probeTenant(t: TenantConfig): Promise<Record<string, unknown>> {
   const csv = await rawGet(t, REPORT_INFO.outbound_calls.path, { ...range7, pageSize: 1 });
   fs.writeFileSync(path.join(dir, "7-outbound-default.txt"), csv.text);
   summary.outboundDefault = { status: csv.status, contentType: csv.contentType, csvHeader: csv.text.split(/\r?\n/)[0]?.slice(0, 500) };
+
+  // 9: utilization (not in the vendor spec). Its own date names, a 31-day
+  // cap, snapshots, and group rows beside business units.
+  const util = REPORT_INFO.utilization.path;
+  const day = { startDate: end, endDate: end };
+  const u1 = await timed(() => client.getPage(util, { ...day, pageSize: 5000 }));
+  if (u1.value) save("9-utilization-day", u1.value);
+  const uRow = u1.value?.data[0];
+  const u31 = await rawGet(t, util, { startDate: addDays(end, -30), endDate: end, pageSize: 1 });
+  const u32 = await rawGet(t, util, { startDate: addDays(end, -31), endDate: end, pageSize: 1 });
+  const snapEod = await timed(() => client.getPage(util, { ...day, snapshotDate: end, pageSize: 1 }));
+  const types = new Map<string, number>();
+  for (const r of u1.value?.data ?? []) types.set(String(r.type), (types.get(String(r.type)) ?? 0) + 1);
+  summary.utilization = {
+    ok: u1.ok,
+    ms: u1.ms,
+    error: u1.error,
+    envelopeKeys: u1.value ? Object.keys(u1.value) : [],
+    timeZone: u1.value?.timeZone,
+    snapshotAt: u1.value?.snapshotAt,
+    rowsOneDay: u1.value?.data.length,
+    rowTypes: Object.fromEntries(types),
+    rowShape: shape(uRow),
+    drift: drift(uRow, SPEC.UTILIZATION_KEYS),
+    days31: { status: u31.status },
+    days32: errorShape(u32),
+    snapshotDateAlone: { ok: snapEod.ok, snapshotAt: snapEod.value?.snapshotAt, error: snapEod.error },
+    snapshotTimeAlone: errorShape(await rawGet(t, util, { ...day, snapshotTime: "08:00" })),
+    snapshotFuture: errorShape(await rawGet(t, util, { ...day, snapshotDate: addDays(runDay, 2) })),
+    createdParams: errorShape(await rawGet(t, util, { createdOnOrAfter: end, createdBefore: end })),
+  };
 
   // 8: tenant isolation. Every row's tenant field should name this token's tenant.
   summary.tenantFieldValues = [...tenantValues];

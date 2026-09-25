@@ -3,7 +3,7 @@ import { z } from "zod";
 import { NeticRequestError, type QueryParams } from "../client.js";
 import { expandPathTokens } from "../config.js";
 import type { AppContext } from "../context.js";
-import { MODALITIES, REPORTS, type Modality, type Report } from "../endpoints.js";
+import { MODALITIES, REPORT_INFO, REPORTS, type Modality, type Report } from "../endpoints.js";
 import { errorResult } from "../format.js";
 
 export const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true } as const;
@@ -25,10 +25,25 @@ export function tenantArg(ctx: AppContext) {
     .describe(`Netic tenant name. Required; there is no default. Ask the user which brand if they did not say. ${known}`);
 }
 
-export const startArg = z.string().describe("Start date, YYYY-MM-DD, inclusive, tenant local time (createdOnOrAfter).");
+export const startArg = z
+  .string()
+  .describe("Start date, YYYY-MM-DD, inclusive, tenant local time (createdOnOrAfter; startDate on utilization).");
 export const endArg = z
   .string()
-  .describe("End date, YYYY-MM-DD, INCLUSIVE, tenant local time (createdBefore; despite the name the day itself is included). For one day, end = start.");
+  .describe(
+    "End date, YYYY-MM-DD, INCLUSIVE, tenant local time (createdBefore, which despite the name includes the day; endDate on utilization). For one day, end = start.",
+  );
+
+export const snapshotDateArg = z
+  .string()
+  .optional()
+  .describe(
+    "Utilization only. Point in time, as in the Utilization Board: rebuild the board as it stood at this moment (YYYY-MM-DD, tenant local, not in the future). Jobs, shifts, and bookings created, cancelled, or edited afterwards are left out. Alone it means the end of that day (the board's \"Use end of day\"). Omit for Live.",
+  );
+export const snapshotTimeArg = z
+  .string()
+  .optional()
+  .describe("Utilization only. Time of the snapshot, HH:mm 24-hour, tenant local (MDT for Blue Sky, CDT for the others). Needs snapshot_date.");
 
 export const modalityArg = z
   .enum(MODALITIES)
@@ -37,7 +52,7 @@ export const modalityArg = z
 export const reportArg = z
   .enum(REPORTS)
   .describe(
-    "interactions (needs modality), scheduler_sessions, scheduler_bookings, tgl_bookings, referrer_bookings, or outbound_calls.",
+    "interactions (needs modality), scheduler_sessions, scheduler_bookings, tgl_bookings, referrer_bookings, outbound_calls, or utilization (Utilization Board: % booked per business unit or group per day).",
   );
 
 export const fieldsArg = z
@@ -73,17 +88,26 @@ export interface ReportArgs {
   end: string;
   modality?: Modality | undefined;
   agent_ids?: Array<string | number> | undefined;
+  snapshot_date?: string | undefined;
+  snapshot_time?: string | undefined;
 }
 
 /** Query parameters for a report, in the API's own names. */
 export function reportParams(report: Report, args: ReportArgs): QueryParams {
-  const params: QueryParams = { createdOnOrAfter: args.start, createdBefore: args.end };
+  const names = REPORT_INFO[report].dateParams;
+  const params: QueryParams = { [names.start]: args.start, [names.end]: args.end };
   if (report === "interactions") {
     if (!args.modality) throw new NeticRequestError(`modality is required for interactions: ${MODALITIES.join(", ")}.`);
     params.modality = args.modality;
   }
   if (report === "outbound_calls" && args.agent_ids && args.agent_ids.length > 0) {
     params.agentId = args.agent_ids.map(String).join(",");
+  }
+  if (report === "utilization") {
+    if (args.snapshot_date) params.snapshotDate = args.snapshot_date;
+    if (args.snapshot_time) params.snapshotTime = args.snapshot_time;
+  } else if (args.snapshot_date || args.snapshot_time) {
+    throw new NeticRequestError("snapshot_date and snapshot_time apply only to the utilization report.");
   }
   return params;
 }

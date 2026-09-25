@@ -1,8 +1,8 @@
 {
   "name": "hbsg-netic",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Claude Desktop extension for the Netic Reports Export API: interactions, bookings, scheduler sessions, outbound calls, counts, and exports.",
+  "description": "Claude Desktop extension for the Netic Reports Export API: interactions, bookings, scheduler sessions, outbound calls, utilization, counts, and exports.",
   "type": "module",
   "engines": {
     "node": ">=20"

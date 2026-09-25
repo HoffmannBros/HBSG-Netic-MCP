@@ -1,6 +1,6 @@
 import { setTimeout as sleepFor } from "node:timers/promises";
-import { DateError, rangeViolation } from "./dates.js";
-import { MODALITIES, PATH_PREFIX, REPORT_INFO } from "./endpoints.js";
+import { DateError, inclusiveDays, isIsoDate, latestDateAnywhere, rangeViolation } from "./dates.js";
+import { CREATED_DATE_PARAMS, MODALITIES, PATH_PREFIX, REPORT_INFO, UTILIZATION_PATH, type ReportInfo } from "./endpoints.js";
 
 export type QueryParams = Record<string, string | number | boolean | undefined>;
 export type Row = Record<string, unknown>;
@@ -13,15 +13,19 @@ export interface Pagination {
   hasMore: boolean;
 }
 
-/** Every report endpoint answers with this envelope. */
+/**
+ * Every report endpoint answers with this envelope. Utilization adds
+ * `timeZone` and `snapshotAt` beside it.
+ */
 export interface Envelope<T = Row> {
   data: T[];
   pagination: Pagination;
+  [extra: string]: unknown;
 }
 
 export const MAX_PAGE_SIZE = 5000;
 
-const REPORT_PATHS = new Set(Object.values(REPORT_INFO).map((r) => r.path));
+const INFO_BY_PATH = new Map<string, ReportInfo>(Object.values(REPORT_INFO).map((r) => [r.path, r]));
 const INTERACTIONS_PATH = REPORT_INFO.interactions.path;
 const OUTBOUND_PATH = REPORT_INFO.outbound_calls.path;
 const SCHEDULER_BOOKINGS_PATH = REPORT_INFO.scheduler_bookings.path;
@@ -81,6 +85,9 @@ function hintFor(status: number, tenant: string, path: string): string {
     case 401:
       return `The token for tenant "${tenant}" was rejected. Check it in Claude Desktop under Settings, Extensions, Netic, or in .env as NETIC_TENANT_${tenant.toUpperCase().replace(/-/g, "_")}_TOKEN.`;
     case 400:
+      if (path === UTILIZATION_PATH) {
+        return "Check startDate and endDate (YYYY-MM-DD, both inclusive, at most 31 days), snapshotDate (not in the future), snapshotTime (HH:mm, needs snapshotDate), page, and pageSize (1 to 5000).";
+      }
       return "Check the dates (YYYY-MM-DD, both inclusive), modality, page, and pageSize (1 to 5000).";
     case 404:
       return "That path does not exist. The report endpoints are listed in netic_api_call's description.";
@@ -177,13 +184,20 @@ export class NeticClient {
   preflight(path: string, params: QueryParams): QueryParams {
     assertAllowedPath(path);
     const out: QueryParams = { ...params };
-    const isReport = REPORT_PATHS.has(path);
-    const start = out.createdOnOrAfter === undefined ? undefined : String(out.createdOnOrAfter);
-    const end = out.createdBefore === undefined ? undefined : String(out.createdBefore);
-    if (isReport || start !== undefined || end !== undefined) {
-      const violation = rangeViolation(start, end);
+    const info = INFO_BY_PATH.get(path);
+    const names = info?.dateParams ?? CREATED_DATE_PARAMS;
+    const start = out[names.start] === undefined ? undefined : String(out[names.start]);
+    const end = out[names.end] === undefined ? undefined : String(out[names.end]);
+    if (info || start !== undefined || end !== undefined) {
+      const violation = rangeViolation(start, end, names);
       if (violation) throw new DateError(violation);
+      if (info?.maxRangeDays && start !== undefined && end !== undefined && inclusiveDays(start, end) > info.maxRangeDays) {
+        throw new DateError(
+          `${info.label} allow at most ${info.maxRangeDays} days per request (inclusive); ${start} to ${end} is ${inclusiveDays(start, end)}. The typed tools split longer ranges automatically.`,
+        );
+      }
     }
+    if (path === UTILIZATION_PATH) checkSnapshot(out);
     const page = intParam(out.page);
     if (page !== undefined && !(page >= 1)) throw new NeticRequestError(`page must be an integer of 1 or more; got ${String(out.page)}.`);
     const pageSize = intParam(out.pageSize);
@@ -266,6 +280,22 @@ export class NeticClient {
       throw new NeticApiError(200, "Response is not the {data, pagination} envelope the spec promises.", this.tenant, path, "");
     }
     return body;
+  }
+}
+
+/** snapshotDate and snapshotTime on utilization, as the API validates them (live 2026-09-25). */
+function checkSnapshot(params: QueryParams): void {
+  const date = params.snapshotDate === undefined ? undefined : String(params.snapshotDate);
+  const time = params.snapshotTime === undefined ? undefined : String(params.snapshotTime);
+  if (time !== undefined && date === undefined) {
+    throw new DateError("snapshotTime needs snapshotDate. Omit both for the live board, or pass the date alone for the end of that day.");
+  }
+  if (time !== undefined && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+    throw new DateError(`snapshotTime "${time}" must be HH:mm on a 24-hour clock, e.g. 08:00 or 16:30, in the tenant's local time.`);
+  }
+  if (date !== undefined) {
+    if (!isIsoDate(date)) throw new DateError(`snapshotDate "${date}" is not a real date in YYYY-MM-DD form.`);
+    if (date > latestDateAnywhere()) throw new DateError(`snapshotDate ${date} is in the future. A snapshot is the board as it stood at a past moment.`);
   }
 }
 

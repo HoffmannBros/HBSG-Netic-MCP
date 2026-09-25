@@ -49,3 +49,12 @@ export const OUTBOUND_KEYS = [
   "id", "service_titan_call_id", "job_id", "tenant", "call_placed_at", "call_duration_seconds", "agent_id", "agent_name",
   "customer_phone", "call_type", "call_reason", "summary", "transcript", "analysis",
 ];
+
+/**
+ * Utilization is not in the vendor spec. These are the row keys seen live on
+ * all four tenants on 2026-09-25, from Netic's own 400 hint and responses.
+ */
+export const UTILIZATION_KEYS = [
+  "date", "type", "name", "businessUnitId", "groups", "percentBooked", "jobHours", "shiftHours", "nonJobHours",
+  "availableHours", "jobs",
+];

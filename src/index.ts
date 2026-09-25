@@ -13,6 +13,7 @@ const INSTRUCTIONS = `Netic is the AI voice agent, texting, and online booking p
 Every tool needs tenant, one brand per tenant (stl Hoffmann STL, nash Hoffmann NSH, blue Blue Sky, ferg Ferguson STL). There is no default: if the user did not name a brand, ask, or call netic_list_tenants.
 Dates are YYYY-MM-DD and both bounds are inclusive in the tenant's local time; one day is start = end.
 For "how many" questions use netic_count, which walks every page and groups by up to three columns. For full pulls use netic_export. The netic_get_* tools return a sample capped by max_rows: read the footer (rows returned of totalRecords, hasMore) before stating totals from them.
+netic_get_utilization is the Netic Utilization Board: % booked (job hours / available hours) per business unit and group per day. null means "No shifts", over 100% is overbooked, and a group row already includes its member units. Live by default; snapshot_date is the board's Point in time. For % booked over several days use netic_count with report=utilization and aggregate=sum, never an average of daily percentages.
 Interactions need modality (call, inbound_text, recapture_text). Booking columns vary by provider (ServiceTitan, Cargas, or session-based). Outbound call transcripts are omitted inline unless include_transcript=true.
 Rows contain customer names, phones, and addresses; do not repeat them beyond what the user asked for.`;
 

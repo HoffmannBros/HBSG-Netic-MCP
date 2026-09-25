@@ -4,8 +4,9 @@ import type { Row } from "../client.js";
 import type { AppContext } from "../context.js";
 import { REPORT_INFO, type Modality, type Report } from "../endpoints.js";
 import { footer, markdownTable, textResult } from "../format.js";
-import { singlePage, walkPages } from "../paging.js";
-import { inlineColumns, stripTranscripts, wherePredicate, type Where } from "../rows.js";
+import { rangeNotes, singleRangePage, walkRange } from "../paging.js";
+import { inlineColumns, project, stripTranscripts, wherePredicate, type Where } from "../rows.js";
+import { namePredicate, utilizationNotes, withBoardCell } from "../utilization.js";
 import {
   READ_ONLY,
   agentIdsArg,
@@ -14,6 +15,8 @@ import {
   guarded,
   modalityArg,
   reportParams,
+  snapshotDateArg,
+  snapshotTimeArg,
   startArg,
   tenantArg,
   whereArg,
@@ -41,6 +44,8 @@ interface CommonArgs {
   modality?: Modality | undefined;
   agent_ids?: Array<string | number> | undefined;
   include_transcript?: boolean | undefined;
+  snapshot_date?: string | undefined;
+  snapshot_time?: string | undefined;
 }
 
 async function runReport(ctx: AppContext, report: Report, args: CommonArgs, extraFilter?: (row: Row) => boolean) {
@@ -52,11 +57,18 @@ async function runReport(ctx: AppContext, report: Report, args: CommonArgs, extr
   const before = client.requestCount;
   const result =
     args.page !== undefined
-      ? await singlePage(client, info.path, params, args.page, args.page_size ?? 100, filter)
-      : await walkPages(client, info.path, params, { pageSize: Math.min(5000, Math.max(args.max_rows, 100)), maxRows: args.max_rows, filter });
+      ? await singleRangePage(client, report, params, args.start, args.end, args.page, args.page_size ?? 100, filter)
+      : await walkRange(client, report, params, args.start, args.end, {
+          pageSize: Math.min(5000, Math.max(args.max_rows, 100)),
+          maxRows: args.max_rows,
+          filter,
+        });
   const apiCalls = client.requestCount - before;
-  const rows = stripTranscripts(result.rows, report, args.include_transcript ?? false);
+  const stripped = stripTranscripts(result.rows, report, args.include_transcript ?? false);
+  const rows = report === "utilization" ? withBoardCell(stripped) : stripped;
   const { columns, available } = inlineColumns(rows, report, args.fields);
+  const notes = report === "utilization" ? utilizationNotes(result.extras) : [];
+  notes.push(...rangeNotes(result, info.maxRangeDays));
   const lines = [
     `${info.label} for tenant ${client.tenant}${args.modality ? ` (modality ${args.modality})` : ""}.`,
     markdownTable(rows, columns),
@@ -83,23 +95,28 @@ async function runReport(ctx: AppContext, report: Report, args: CommonArgs, extr
         args.page !== undefined
           ? `Request page ${args.page + 1} for more, or use netic_count or netic_export.`
           : "This is a sample: use netic_count for totals or netic_export for every row.",
+      notes,
     }),
   );
+  // Claude's client shows the model only structuredContent when it is present,
+  // so the rows must be here, not just in the text.
   return textResult(lines.join("\n\n"), {
     tenant: client.tenant,
     report,
     start: args.start,
     end: args.end,
+    ...result.extras,
     returned: rows.length,
     totalRecords: result.totalRecords,
     scanned: result.scanned,
     hasMore: result.hasMore,
     columns,
+    rows: rows.map((r) => project(r, columns)),
     apiCalls,
   });
 }
 
-const DESCRIPTIONS: Record<Exclude<Report, "interactions" | "scheduler_sessions" | "outbound_calls">, { name: string; title: string; description: string }> = {
+const DESCRIPTIONS: Record<Exclude<Report, "interactions" | "scheduler_sessions" | "outbound_calls" | "utilization">, { name: string; title: string; description: string }> = {
   scheduler_bookings: {
     name: "netic_get_scheduler_bookings",
     title: "Get Netic online scheduler bookings",
@@ -196,5 +213,42 @@ export function registerReportTools(server: McpServer, ctx: AppContext): void {
       annotations: READ_ONLY,
     },
     guarded(async (args) => runReport(ctx, "outbound_calls", args)),
+  );
+
+  server.registerTool(
+    "netic_get_utilization",
+    {
+      title: "Get the Netic Utilization Board",
+      description:
+        "The Netic Utilization Board (Utilization > Board in the dashboard): how booked each business unit and group is, one row per unit or group per day. " +
+        "percentBooked = job hours / available hours, rounded, where available = shift hours - non-job hours. Over 100% means overbooked and is shown as-is (217% happens). " +
+        `The board cell is "N jobs · X%" (the board column here). percentBooked null is the board's "No shifts": no shift hours that day, even if jobs exist; 0% means shifts but nothing booked or no time left after non-job hours. ` +
+        "Groups (type=group) roll up business units that share technicians, e.g. Blue Sky's HVAC Service group = the HVAC Service and HVAC Maintenance units; a member unit's groups column names its group. Group rows are not additive with their members, so never add a group to its units. " +
+        "Live (default) is the board as it stands now, for any dates including past and future days. snapshot_date (and optionally snapshot_time) is the board's Point in time: the board as it stood at that moment, before later bookings, cancellations, and edits. " +
+        "Dates are YYYY-MM-DD, both inclusive, tenant local time (America/Denver for Blue Sky, America/Chicago for the others). Netic allows 31 days per request; longer ranges are split automatically. For totals across days (e.g. weekly % booked per unit) use netic_count with aggregate=sum.",
+      inputSchema: {
+        tenant: tenantArg(ctx),
+        start: startArg,
+        end: endArg,
+        snapshot_date: snapshotDateArg,
+        snapshot_time: snapshotTimeArg,
+        type: z.enum(["group", "business_unit"]).optional().describe("Keep only group rows or only business_unit rows. Filtered client-side."),
+        name: z
+          .union([z.string(), z.array(z.string())])
+          .optional()
+          .describe('Keep only these business unit or group names, case-insensitive, surrounding spaces ignored, e.g. "HVAC Service" or ["Drains","Plumbing Service"].'),
+        fields: fieldsArg,
+        where: whereArg,
+        max_rows: maxRowsArg,
+        page: pageArg,
+        page_size: pageSizeArg,
+      },
+      annotations: READ_ONLY,
+    },
+    guarded(async ({ type, name, ...args }) => {
+      const where: Where = { ...(args.where ?? {}) };
+      if (type) where.type = type;
+      return runReport(ctx, "utilization", { ...args, where: Object.keys(where).length > 0 ? where : undefined }, namePredicate(name));
+    }),
   );
 }

@@ -4,8 +4,9 @@ import { RowSpool, sanitizeFilename } from "../csv.js";
 import type { AppContext } from "../context.js";
 import { REPORT_INFO, TRANSCRIPT_COLUMNS } from "../endpoints.js";
 import { footer, formatBytes, markdownTable, textResult } from "../format.js";
-import { walkPages } from "../paging.js";
+import { rangeNotes, walkRange } from "../paging.js";
 import { dropColumns, project, wherePredicate } from "../rows.js";
+import { utilizationNotes } from "../utilization.js";
 import {
   READ_ONLY,
   agentIdsArg,
@@ -18,6 +19,8 @@ import {
   reportArg,
   reportParams,
   resolveOutputDir,
+  snapshotDateArg,
+  snapshotTimeArg,
   startArg,
   tenantArg,
   whereArg,
@@ -30,7 +33,7 @@ export function registerExportTools(server: McpServer, ctx: AppContext): void {
     {
       title: "Export a Netic report to a file",
       description:
-        "Pull every page of a report for the date range into a CSV or JSON file in the export folder, and return the path, row count, columns, and a short preview. Use this for full or large pulls instead of netic_get_*. CSV is UTF-8 with a BOM for Excel. Existing files are never overwritten. Dates are YYYY-MM-DD, both inclusive, tenant local time.",
+        "Pull every page of a report for the date range into a CSV or JSON file in the export folder, and return the path, row count, columns, and a short preview. Use this for full or large pulls instead of netic_get_*. CSV is UTF-8 with a BOM for Excel. Existing files are never overwritten. Dates are YYYY-MM-DD, both inclusive, tenant local time. Utilization ranges over 31 days are split into several requests automatically.",
       inputSchema: {
         tenant: tenantArg(ctx),
         report: reportArg,
@@ -41,6 +44,8 @@ export function registerExportTools(server: McpServer, ctx: AppContext): void {
         fields: fieldsArg.describe("Columns to write, in order. Omit to write every column."),
         where: whereArg,
         agent_ids: agentIdsArg,
+        snapshot_date: snapshotDateArg,
+        snapshot_time: snapshotTimeArg,
         include_transcript: z.boolean().default(true).describe("Outbound calls only: write the transcript and analysis columns. Default true, since they go to a file."),
         max_rows: z.number().int().min(1).max(2_000_000).default(1_000_000).describe("Safety cap on rows written. Default 1000000."),
         filename: filenameArg,
@@ -60,7 +65,7 @@ export function registerExportTools(server: McpServer, ctx: AppContext): void {
       const before = client.requestCount;
       let result;
       try {
-        result = await walkPages(client, info.path, params, {
+        result = await walkRange(client, args.report, params, args.start, args.end, {
           pageSize: 5000,
           maxRows: args.max_rows,
           filter: wherePredicate(args.where),
@@ -99,6 +104,10 @@ export function registerExportTools(server: McpServer, ctx: AppContext): void {
           filtered: args.where !== undefined,
           apiCalls,
           moreHint: "The max_rows cap was hit, so the file is partial. Raise max_rows or split the dates.",
+          notes: [
+            ...(args.report === "utilization" ? utilizationNotes(result.extras) : []),
+            ...rangeNotes(result, info.maxRangeDays),
+          ],
         }),
       ]
         .filter(Boolean)
@@ -110,6 +119,8 @@ export function registerExportTools(server: McpServer, ctx: AppContext): void {
         rows: out.rows,
         columns: out.columns,
         bytes: out.bytes,
+        ...result.extras,
+        preview: preview.map((r) => project(r, previewColumns)),
         totalRecords: result.totalRecords,
         hasMore: result.hasMore,
         apiCalls,

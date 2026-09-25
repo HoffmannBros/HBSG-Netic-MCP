@@ -4,20 +4,28 @@ import { z } from "zod";
 import { isEnvelope } from "../client.js";
 import type { AppContext } from "../context.js";
 import { sanitizeFilename, uniquePath } from "../csv.js";
-import { PATH_PREFIX, REPORT_INFO } from "../endpoints.js";
+import { PATH_PREFIX, REPORT_INFO, UTILIZATION_PATH } from "../endpoints.js";
 import { formatBytes, textResult } from "../format.js";
 import { READ_ONLY, guarded, outputDirArg, resolveOutputDir, tenantArg, withExtension } from "./common.js";
 
-const KNOWN_PATHS = Object.values(REPORT_INFO)
+const SPEC_PATHS = Object.values(REPORT_INFO)
+  .filter((r) => r.path !== UTILIZATION_PATH)
   .map((r) => r.path)
   .join(", ");
+
+/** Inline JSON cap, in characters, for responses that are not the row envelope. */
+const BODY_CAP = 20_000;
 
 export function registerRawTools(server: McpServer, ctx: AppContext): void {
   server.registerTool(
     "netic_api_call",
     {
       title: "Call the Netic API directly",
-      description: `Escape hatch for anything the typed tools do not cover. GET only; the path must start with ${PATH_PREFIX}, and web/leads (which submits real leads) is refused. Known paths: ${KNOWN_PATHS}. Params use the API's own names: createdOnOrAfter and createdBefore (YYYY-MM-DD, both inclusive), page, pageSize (1 to 5000), modality, agentId. Outbound calls always get format=json. No auto-paging; data arrays are capped inline by max_items, and save_as writes the full response to a JSON file.`,
+      description:
+        `Escape hatch for anything the typed tools do not cover. GET only; the path must start with ${PATH_PREFIX}, and web/leads (which submits real leads) is refused. Params use the API's own names. ` +
+        `${SPEC_PATHS}: createdOnOrAfter and createdBefore (YYYY-MM-DD, both inclusive), page, pageSize (1 to 5000); interactions also need modality, outbound calls take agentId and always get format=json. ` +
+        `${UTILIZATION_PATH}: startDate and endDate (YYYY-MM-DD, both inclusive, at most 31 days per request), snapshotDate (YYYY-MM-DD, not in the future; alone means the end of that day), snapshotTime (HH:mm, needs snapshotDate), page, pageSize. ` +
+        "No auto-paging; data rows are capped by max_items, and save_as writes the full response to a JSON file.",
       inputSchema: {
         tenant: tenantArg(ctx),
         path: z.string().regex(/^\/api\/public\/metrics\//).describe(`Request path starting with ${PATH_PREFIX}.`),
@@ -57,12 +65,21 @@ export function registerRawTools(server: McpServer, ctx: AppContext): void {
         ]
           .filter(Boolean)
           .join("\n\n");
-        return textResult(text, { tenant: client.tenant, path, pagination: p, returned: shown.length, savedPath, apiCalls });
+        const { data: _rows, pagination: _p, ...extras } = data;
+        return textResult(text, { tenant: client.tenant, path, ...extras, pagination: p, returned: shown.length, rows: shown, savedPath, apiCalls });
       }
-      const text = [`Response from ${path} for tenant ${client.tenant}. ${apiCalls} API call(s).`, saved, "```json", JSON.stringify(data, null, 2).slice(0, 20_000), "```"]
+      const json = JSON.stringify(data, null, 2);
+      const truncated = json.length > BODY_CAP;
+      const text = [
+        `Response from ${path} for tenant ${client.tenant}. ${apiCalls} API call(s).${truncated ? ` Truncated to ${BODY_CAP} characters; use save_as for all of it.` : ""}`,
+        saved,
+        "```json",
+        json.slice(0, BODY_CAP),
+        "```",
+      ]
         .filter(Boolean)
         .join("\n\n");
-      return textResult(text, { tenant: client.tenant, path, savedPath, apiCalls });
+      return textResult(text, { tenant: client.tenant, path, ...(truncated ? { truncated: true } : { body: data }), savedPath, apiCalls });
     }),
   );
 }

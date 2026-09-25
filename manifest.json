@@ -2,9 +2,9 @@
   "manifest_version": "0.4",
   "name": "hbsg-netic",
   "display_name": "Netic (Hoffmann Brothers)",
-  "version": "0.1.0",
-  "description": "Read Netic AI agent and online booking data: inbound interactions, bookings, scheduler sessions, outbound calls, counts, and exports.",
-  "long_description": "Connects Claude to the Netic Reports Export API for Hoffmann Brothers' brands. Ask how many calls the Netic agent booked by lead source, where online scheduler sessions drop off, which technicians turned leads, or what outbound CSR calls were about, for any date range. Counts walk every page, and exports write CSV or JSON files of any size. Read-only: the extension never creates leads or changes anything in Netic.\n\nSetup: Netic issues one token per tenant. Fill in a name and token for each tenant you use (the names default to stl, nash, blue, and ferg). Tokens are stored in your OS keychain. Leave unused slots blank.\n\nExports are saved to the export folder you choose (default: Documents/Netic Reports).",
+  "version": "0.2.0",
+  "description": "Read Netic AI agent and online booking data: inbound interactions, bookings, scheduler sessions, outbound calls, utilization, counts, and exports.",
+  "long_description": "Connects Claude to the Netic Reports Export API for Hoffmann Brothers' brands. Ask how many calls the Netic agent booked by lead source, where online scheduler sessions drop off, which technicians turned leads, what outbound CSR calls were about, or how booked each business unit is on the Utilization Board, for any date range. Counts walk every page, and exports write CSV or JSON files of any size. Read-only: the extension never creates leads or changes anything in Netic.\n\nSetup: Netic issues one token per tenant. Fill in a name and token for each tenant you use (the names default to stl, nash, blue, and ferg). Tokens are stored in your OS keychain. Leave unused slots blank.\n\nExports are saved to the export folder you choose (default: Documents/Netic Reports).",
   "author": {
     "name": "Justin Schmidt",
     "email": "justin+ai@justinschmidt.me"
@@ -42,7 +42,8 @@
     { "name": "netic_get_tgl_bookings", "description": "Technician turn-the-lead bookings" },
     { "name": "netic_get_referrer_bookings", "description": "Referrer (RGL) bookings" },
     { "name": "netic_get_outbound_calls", "description": "Outbound CSR calls with summaries and optional transcripts" },
-    { "name": "netic_count", "description": "Count every row of a report grouped by up to three columns" },
+    { "name": "netic_get_utilization", "description": "Utilization Board: % booked per business unit and group per day, live or point in time" },
+    { "name": "netic_count", "description": "Count every row of a report grouped by up to three columns, or sum utilization hours" },
     { "name": "netic_export", "description": "Write every row of a report to a CSV or JSON file" },
     { "name": "netic_api_call", "description": "Call a Netic report path directly (GET only)" }
   ],

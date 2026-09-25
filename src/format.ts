@@ -40,6 +40,8 @@ export interface FooterInfo {
   apiCalls: number;
   /** What to do about `hasMore`, e.g. which tool pulls the rest. */
   moreHint?: string | undefined;
+  /** Extra facts for the end of the footer, e.g. timezone and snapshot. */
+  notes?: string[] | undefined;
 }
 
 /**
@@ -51,7 +53,8 @@ export function footer(f: FooterInfo): string {
     ? `${f.returned} matching row(s) from ${f.scanned ?? 0} scanned of ${f.totalRecords} in range`
     : `${f.returned} of ${f.totalRecords} row(s)`;
   const more = f.hasMore ? `hasMore: true${f.moreHint ? `. ${f.moreHint}` : ""}` : "hasMore: false";
-  return `---\ntenant ${f.tenant} · ${f.label} · ${f.start} to ${f.end} (both inclusive, tenant local time) · ${rows} · ${more} · ${f.apiCalls} API call(s)`;
+  const notes = f.notes && f.notes.length > 0 ? ` · ${f.notes.join(" · ")}` : "";
+  return `---\ntenant ${f.tenant} · ${f.label} · ${f.start} to ${f.end} (both inclusive, tenant local time) · ${rows} · ${more} · ${f.apiCalls} API call(s)${notes}`;
 }
 
 export function textResult(text: string, structured?: Record<string, unknown>): CallToolResult {

@@ -24,6 +24,20 @@ interface Seen {
 
 const seen: Seen[] = [];
 
+/** Utilization rows for every day in startDate..endDate: one group and its two units. */
+function utilizationRows(url: URL): Array<Record<string, unknown>> {
+  const out: Array<Record<string, unknown>> = [];
+  const end = url.searchParams.get("endDate") ?? "";
+  for (let d = url.searchParams.get("startDate") ?? ""; d && d <= end; d = new Date(Date.parse(`${d}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) {
+    out.push(
+      { date: d, type: "group", name: "HVAC Service", businessUnitId: null, groups: [], percentBooked: 99, jobHours: 87.8, shiftHours: 102, nonJobHours: 13.1, availableHours: 88.9, jobs: 37 },
+      { date: d, type: "business_unit", name: "HVAC Maintenance", businessUnitId: 2, groups: ["HVAC Service"], percentBooked: null, jobHours: 48.5, shiftHours: 0, nonJobHours: 0, availableHours: 0, jobs: 23 },
+      { date: d, type: "business_unit", name: "HVAC Service", businessUnitId: 1, groups: ["HVAC Service"], percentBooked: 44, jobHours: 39.3, shiftHours: 102, nonJobHours: 13.1, availableHours: 88.9, jobs: 14 },
+    );
+  }
+  return out;
+}
+
 function rowsFor(pathname: string): Array<Record<string, unknown>> {
   if (pathname.endsWith("/interactions")) {
     return Array.from({ length: 1234 }, (_, i) => ({
@@ -52,13 +66,17 @@ beforeAll(async () => {
   server = http.createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     seen.push({ method: req.method ?? "", url, auth: req.headers.authorization });
-    const all = rowsFor(url.pathname);
+    const utilization = url.pathname.endsWith("/utilization");
+    const all = utilization ? utilizationRows(url) : rowsFor(url.pathname);
     const page = Number(url.searchParams.get("page") ?? 1);
     const pageSize = Number(url.searchParams.get("pageSize") ?? 100);
     const data = all.slice((page - 1) * pageSize, page * pageSize);
     const totalPages = Math.max(1, Math.ceil(all.length / pageSize));
     res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ data, pagination: { page, pageSize, totalRecords: all.length, totalPages, hasMore: page < totalPages } }));
+    const extras = utilization
+      ? { timeZone: "America/Denver", snapshotAt: url.searchParams.get("snapshotDate") ? `${url.searchParams.get("snapshotDate")}T23:59:59.999-06:00` : null }
+      : {};
+    res.end(JSON.stringify({ data, pagination: { page, pageSize, totalRecords: all.length, totalPages, hasMore: page < totalPages }, ...extras }));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
@@ -171,5 +189,113 @@ describe("tools against a fake Netic API", () => {
     expect(result.isError).toBeFalsy();
     expect(text).toContain("x@example.test");
     expect(text).toContain("totalRecords 1");
+  });
+
+  it("puts inline rows in structuredContent, which is all Claude's client shows the model", async () => {
+    const result = await client.callTool({ name: "netic_get_interactions", arguments: { tenant: "stl", modality: "call", max_rows: 3, ...range } });
+    const s = result.structuredContent as { rows: Array<Record<string, unknown>>; columns: string[]; returned: number };
+    expect(s.returned).toBe(3);
+    expect(s.rows).toHaveLength(3);
+    expect(Object.keys(s.rows[0] ?? {})).toEqual(s.columns);
+    expect(s.rows[0]?.category).toBe("Booked");
+
+    const raw = await client.callTool({
+      name: "netic_api_call",
+      arguments: { tenant: "stl", path: "/api/public/metrics/bookings/referrer", params: { createdOnOrAfter: "2026-09-01", createdBefore: "2026-09-01" } },
+    });
+    expect((raw.structuredContent as { rows: Array<Record<string, unknown>> }).rows[0]?.referrer_email).toBe("x@example.test");
+  });
+
+  it("sends startDate and endDate for utilization and shows the board cell", async () => {
+    seen.length = 0;
+    const result = await client.callTool({ name: "netic_get_utilization", arguments: { tenant: "stl", start: "2026-09-24", end: "2026-09-24" } });
+    expect(result.isError).toBeFalsy();
+    const url = seen[0]?.url;
+    expect(url?.searchParams.get("startDate")).toBe("2026-09-24");
+    expect(url?.searchParams.get("endDate")).toBe("2026-09-24");
+    expect(url?.searchParams.has("createdOnOrAfter")).toBe(false);
+    const text = textOf(result);
+    expect(text).toContain("37 jobs · 99%");
+    expect(text).toContain("23 jobs · No shifts");
+    expect(text).toContain("timeZone America/Denver");
+    expect(text).toContain("Live board");
+    const s = result.structuredContent as { rows: Array<Record<string, unknown>>; timeZone: string };
+    expect(s.timeZone).toBe("America/Denver");
+    expect(s.rows).toHaveLength(3);
+    expect(s.rows[1]).toMatchObject({ name: "HVAC Maintenance", board: "23 jobs · No shifts", percentBooked: null });
+  });
+
+  it("splits a 45-day utilization range into 31-day requests with no gaps or overlaps", async () => {
+    seen.length = 0;
+    const result = await client.callTool({
+      name: "netic_get_utilization",
+      arguments: { tenant: "stl", start: "2026-08-01", end: "2026-09-14", type: "group", max_rows: 5000 },
+    });
+    expect(result.isError).toBeFalsy();
+    const windows = seen.map((s) => [s.url.searchParams.get("startDate"), s.url.searchParams.get("endDate")]);
+    expect(windows).toEqual([
+      ["2026-08-01", "2026-08-31"],
+      ["2026-09-01", "2026-09-14"],
+    ]);
+    const s = result.structuredContent as { rows: Array<{ date: string }>; totalRecords: number };
+    expect(s.rows).toHaveLength(45);
+    expect(new Set(s.rows.map((r) => r.date)).size).toBe(45);
+    expect(s.totalRecords).toBe(135);
+    expect(textOf(result)).toContain("range split into 2 requests");
+  });
+
+  it("filters utilization by name, ignoring case and stray spaces", async () => {
+    const result = await client.callTool({ name: "netic_get_utilization", arguments: { tenant: "stl", start: "2026-09-24", end: "2026-09-24", name: " hvac maintenance " } });
+    expect((result.structuredContent as { rows: unknown[] }).rows).toHaveLength(1);
+  });
+
+  it("passes a snapshot through and says so in the footer", async () => {
+    seen.length = 0;
+    const result = await client.callTool({
+      name: "netic_get_utilization",
+      arguments: { tenant: "stl", start: "2026-09-24", end: "2026-09-24", snapshot_date: "2026-09-23", snapshot_time: "08:00" },
+    });
+    expect(seen[0]?.url.searchParams.get("snapshotDate")).toBe("2026-09-23");
+    expect(seen[0]?.url.searchParams.get("snapshotTime")).toBe("08:00");
+    expect(textOf(result)).toContain("Point in time: board as it stood at 2026-09-23T23:59:59.999-06:00");
+  });
+
+  it("refuses snapshot_time without snapshot_date before calling the API", async () => {
+    seen.length = 0;
+    const result = await client.callTool({ name: "netic_get_utilization", arguments: { tenant: "stl", start: "2026-09-24", end: "2026-09-24", snapshot_time: "08:00" } });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toMatch(/snapshotTime needs snapshotDate/);
+    expect(seen).toHaveLength(0);
+  });
+
+  it("sums utilization per group and recomputes % booked from the sums", async () => {
+    const result = await client.callTool({
+      name: "netic_count",
+      arguments: { tenant: "stl", report: "utilization", aggregate: "sum", group_by: ["type", "name"], start: "2026-09-20", end: "2026-09-26" },
+    });
+    expect(result.isError).toBeFalsy();
+    const s = result.structuredContent as { groups: Array<{ values: string[]; rows: number; jobHours: number; availableHours: number; percentBooked: number | null }> };
+    const group = s.groups.find((g) => g.values[0] === "group");
+    expect(group).toMatchObject({ rows: 7, jobHours: 614.6, availableHours: 622.3, percentBooked: 99 });
+    expect(s.groups.find((g) => g.values[1] === "HVAC Maintenance")?.percentBooked).toBeNull();
+    expect(textOf(result)).not.toContain("Warning");
+  });
+
+  it("warns when a sum mixes group rows with their member units", async () => {
+    const result = await client.callTool({
+      name: "netic_count",
+      arguments: { tenant: "stl", report: "utilization", aggregate: "sum", group_by: ["date"], start: "2026-09-24", end: "2026-09-24" },
+    });
+    expect(textOf(result)).toMatch(/Warning: these totals mix group rows with business_unit rows/);
+    expect((result.structuredContent as { mixesTypes: boolean }).mixesTypes).toBe(true);
+  });
+
+  it("refuses aggregate=sum on reports other than utilization", async () => {
+    const result = await client.callTool({
+      name: "netic_count",
+      arguments: { tenant: "stl", report: "interactions", modality: "call", aggregate: "sum", group_by: ["category"], ...range },
+    });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toMatch(/applies only to report=utilization/);
   });
 });

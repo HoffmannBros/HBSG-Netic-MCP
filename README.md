@@ -3,7 +3,8 @@
 A Claude Desktop extension that connects Claude to the Netic Reports Export API for Hoffmann
 Brothers' brands. Netic runs the AI voice agent, texting, and online scheduler; this extension
 reads the same rows as the Netic dashboard CSV exports: inbound interactions, scheduler
-sessions and bookings, technician TGL and referrer bookings, and outbound CSR calls.
+sessions and bookings, technician TGL and referrer bookings, outbound CSR calls, and the
+Utilization Board.
 
 It is read-only. It never creates leads or changes anything in Netic.
 
@@ -32,6 +33,8 @@ How many STL scheduler sessions were abandoned last month, and at which step?
 Show me yesterday's Nashville inbound texts that didn't book.
 Export all Ferguson call interactions for August to CSV.
 What were the most common outbound call reasons for STL this week?
+How booked is Blue Sky's HVAC Service group tomorrow, and how full was it at 8 AM yesterday?
+Blue Sky % booked per business unit for last week.
 ```
 
 ## What Claude can do
@@ -45,7 +48,8 @@ What were the most common outbound call reasons for STL this week?
 | `netic_get_tgl_bookings` | Technician turn-the-lead bookings |
 | `netic_get_referrer_bookings` | Referrer (RGL) bookings |
 | `netic_get_outbound_calls` | Outbound CSR calls with summaries; transcripts on request |
-| `netic_count` | Counts across every page, grouped by up to three columns |
+| `netic_get_utilization` | Utilization Board: % booked per business unit and group per day, live or point in time |
+| `netic_count` | Counts across every page, grouped by up to three columns; `aggregate=sum` totals utilization hours and recomputes % booked |
 | `netic_export` | Every row of a report to a CSV or JSON file |
 | `netic_api_call` | A Netic report path directly, GET only |
 
@@ -53,6 +57,13 @@ Every tool asks for a tenant; there is no default, so Claude asks if you did not
 brand. Dates are inclusive on both ends in the tenant's local time. The `netic_get_*` tools
 return a sample (500 rows by default) and end with a footer saying how many rows exist in
 total; `netic_count` and `netic_export` cover every row.
+
+Utilization reads like the Netic Utilization Board: each cell is "N jobs · X%", where X is job
+hours over available hours (shift minus non-job hours). "No shifts" means no shift hours that
+day, and over 100% means overbooked. Group rows (Blue Sky's HVAC Service group is the HVAC
+Service and HVAC Maintenance units) already include their member units, so don't add the two.
+Live is the default; a snapshot date (and optional time) is the board's Point in time. Netic
+allows 31 days per request, and longer ranges are split automatically.
 
 CSV files are UTF-8 with a byte-order mark and CRLF line endings, so Excel opens them cleanly
 on Windows. Existing files are never overwritten; a numeric suffix is added instead.

@@ -92,3 +92,41 @@ tenant at some point, and nash failed 7 times in a row. Retries often land, and 
 warm-up the same queries answer in 0.4 to 2.3 s on every tenant. The client therefore
 retries a 500 on this one endpoint (3 attempts); other 500s are not retried. Worth raising
 with Netic.
+
+### 2026-09-25, utilization (`/api/public/metrics/utilization`, not in the vendor spec)
+
+Probed by hand on blue, then `npm run probe` on all four tenants. UI comparison and the
+parity table are in `docs/utilization-ui-findings.md`.
+
+- **Params.** `startDate` and `endDate` (YYYY-MM-DD, both inclusive, required),
+  `snapshotDate`, `snapshotTime`, `page`, `pageSize` (max 5000). It rejects
+  `createdOnOrAfter`/`createdBefore` with 400 `startDate: Required; endDate: Required`.
+  Netic's own 400 hint lists the params.
+- **Range.** 31 inclusive days (start + 30) returns 200; 32 returns 400 `endDate: range may
+  span at most 31 days`, despite the hint's wording "at most 31 days after startDate". End
+  before start is a 400 here, unlike the other endpoints. Future dates are fine (live).
+  One 31-day request took about 1.5 s on blue.
+- **Snapshot.** `snapshotDate` alone means the end of that day: `snapshotAt:
+  "2026-09-24T23:59:59.999-06:00"`. With `snapshotTime=08:00`, `snapshotAt:
+  "2026-09-23T08:00:00.000-06:00"`. `snapshotTime` alone is 400 `snapshotTime: requires
+  snapshotDate`; a future `snapshotDate` is 400 `has not started yet in the tenant's
+  timezone`. Live responses carry `snapshotAt: null`.
+- **Envelope.** `{data, pagination, timeZone, snapshotAt}`. `timeZone` is America/Denver
+  for blue and America/Chicago for stl, nash, and ferg.
+- **Rows.** One per business unit or group per day, every day (weekends included):
+  `{date, type: "group"|"business_unit", name, businessUnitId (null on groups), groups
+  (a unit's group names; [] on groups), percentBooked, jobHours, shiftHours, nonJobHours,
+  availableHours, jobs}`. Rows per day: blue 14, stl 22, nash 20, ferg 16. No customer PII.
+- **percentBooked** = round(jobHours / availableHours × 100), availableHours = shiftHours −
+  nonJobHours, computed from unrounded hours (recomputing from the 0.1-hour values is off by
+  a point on about 3% of rows). null when shiftHours is 0 (the board's "No shifts"), and 0
+  when there are shifts but no available hours, even with jobs.
+- **Groups.** A group's hours equal the sum of its member units (blue's HVAC Service group =
+  HVAC Service + HVAC Maintenance on 9/24: 87.8 job hours / 88.9 available = 99%, 37 jobs).
+  The member units list it in `groups`.
+- `type` and `name` query params are ignored (all 14 rows came back with `type=group`).
+- Blue has a unit named `"HVAC Sales "` with a trailing space.
+- `npm run probe` confirmed every point above on all four tenants: the same row keys (no
+  drift), 31 days 200 and 32 days 400, the snapshot errors, and the created-param refusal.
+  Group rows per day: stl 2, nash 4, blue 1, ferg 8. The same run hit the known
+  scheduler-bookings 500 on stl and nash, which is unrelated.

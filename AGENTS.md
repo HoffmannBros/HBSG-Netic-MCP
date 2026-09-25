@@ -4,7 +4,8 @@
 
 Claude Desktop extension (.mcpb) for the Netic Reports Export API: the read-only,
 tenant-scoped JSON version of the Netic dashboard CSV exports (inbound interactions, TGL,
-scheduler and referrer bookings, scheduler sessions, outbound CSR call transcripts). One
+scheduler and referrer bookings, scheduler sessions, outbound CSR call transcripts), plus the
+Utilization Board. One
 bearer JWT per tenant. TypeScript, Node, MCP SDK 1.x, bundled by esbuild into
 `server/index.cjs` with no shipped node_modules.
 
@@ -34,18 +35,20 @@ bearer JWT per tenant. TypeScript, Node, MCP SDK 1.x, bundled by esbuild into
 | `src/config.ts` | Tenant loader (`.env` style and manifest slots), path token expansion |
 | `src/context.ts` | One client per tenant; `clientFor` refuses unknown tenants |
 | `src/client.ts` | GET-only Netic client; path guard, preflight, hints, errors |
-| `src/endpoints.ts` | The six report endpoints, their paths and default columns |
-| `src/dates.ts` | Inclusive-range validation |
-| `src/paging.ts` | Auto-paging over the `{data, pagination}` envelope |
-| `src/rows.ts`, `src/aggregate.ts` | `where` filter, column choice, grouped counts |
+| `src/endpoints.ts` | The report endpoints: paths, date param names, range limits, default columns |
+| `src/dates.ts` | Inclusive-range validation, range splitting |
+| `src/paging.ts` | Auto-paging over the `{data, pagination}` envelope; `walkRange` splits long utilization ranges |
+| `src/utilization.ts` | Board cell text, % booked formula, name filter, footer notes |
+| `src/rows.ts`, `src/aggregate.ts` | `where` filter, column choice, grouped counts, utilization sums |
 | `src/csv.ts` | Streaming CSV and JSON export spool |
 | `src/format.ts` | Markdown tables, the result footer, error text |
-| `src/tools/*.ts` | tenants, reports, aggregate (count), export, raw |
+| `src/tools/*.ts` | tenants, reports (incl. utilization), aggregate (count and sum), export, raw |
 | `src/schema-compat.ts` | Restamps tool schemas as JSON Schema 2020-12 |
 | `scripts/probe.ts` | Live spec-versus-API checks |
 | `scripts/smoke.ts`, `scripts/handshake.ts`, `scripts/pack.sh` | Live smoke, stdio check, bundle |
 | `docs/vendor/` | Netic's OpenAPI spec and intro doc, as received |
 | `docs/netic-api.md` | Spec summary plus dated live findings |
+| `docs/utilization-ui-findings.md` | Utilization Board UI terms, internal calls, and the UI-versus-tool parity table |
 
 ## Hard rules
 
@@ -79,6 +82,12 @@ bearer JWT per tenant. TypeScript, Node, MCP SDK 1.x, bundled by esbuild into
 - Scheduler session values are all strings, including counts and yes/no flags.
 - Interactions carry 14 columns the spec omits (call durations, transfer and post-transfer
   outcome, `jobId`, `bookedByOther`); see "Live findings" in `docs/netic-api.md`.
+- Utilization is not in the vendor spec. It takes `startDate`/`endDate` (not
+  `createdOnOrAfter`), at most 31 inclusive days per request, and optional `snapshotDate` and
+  `snapshotTime`. `percentBooked: null` is the board's "No shifts". Group rows already include
+  their member units; never add both. Rows carry no customer PII.
+- Tool results must carry their rows in `structuredContent`: when it is present, Claude's
+  client shows the model only that, not the text.
 - Scheduler bookings can take ~15 s and then 500 on a cold call; the client retries that one
   endpoint's 500s. Long ranges are fine everywhere; latency, not a limit, is the cost.
 
