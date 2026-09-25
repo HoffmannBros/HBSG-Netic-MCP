@@ -1,0 +1,817 @@
+openapi: 3.0.3
+info:
+  title: Netic Reports Export API
+  description: |
+    Tenant-scoped, read-only API for exporting the same data available as CSV
+    downloads in the Netic dashboard. Designed for customers to programmatically
+    pull interaction and booking data.
+
+    ## Authentication
+    All requests require a Bearer token in the `Authorization` header. Tokens are
+    tenant-scoped JWTs provided by Netic during onboarding — the same token used
+    for the Web Leads endpoint (`/api/public/metrics/web/leads`).
+
+    ## Date filtering
+    All report endpoints require an inclusive date range via `createdOnOrAfter`
+    and `createdBefore` (both `YYYY-MM-DD`). Both bounds are inclusive of the full
+    day in the tenant's local timezone, so results match the calendar dates a
+    tenant sees in the dashboard.
+
+    ## Pagination
+    Results are paginated with `page` (default 1) and `pageSize` (default 100,
+    max 5000). Every response includes a `pagination` object.
+  version: 1.0.0
+
+servers:
+  - url: https://app.netic.ai
+    description: Production
+
+paths:
+  /api/public/metrics/interactions:
+    get:
+      operationId: getInteractions
+      summary: Inbound interaction drilldown (calls, inbound texts, recapture texts)
+      description: |
+        Returns one row per inbound interaction for the selected modality — the
+        same rows as the dashboard "Drill Down" CSV export.
+      tags:
+        - Interactions
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Modality'
+        - $ref: '#/components/parameters/CreatedOnOrAfter'
+        - $ref: '#/components/parameters/CreatedBefore'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Interaction rows retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pagination]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InteractionRow'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/public/metrics/bookings/technician-tgl:
+    get:
+      operationId: getTechnicianTglBookings
+      summary: Technician TGL bookings
+      description: |
+        Technician "turn the lead" bookings — the same rows as the dashboard
+        "Technician TGL Bookings" CSV export. Column set varies by the tenant's
+        booking provider (ServiceTitan vs. other). Tenants without TGL return an
+        empty `data` array.
+      tags:
+        - Bookings
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CreatedOnOrAfter'
+        - $ref: '#/components/parameters/CreatedBefore'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Technician TGL booking rows retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pagination]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      oneOf:
+                        - $ref: '#/components/schemas/TechnicianTglServiceTitanRow'
+                        - $ref: '#/components/schemas/TechnicianTglCargasRow'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/public/metrics/bookings/scheduler:
+    get:
+      operationId: getSchedulerBookedJobs
+      summary: Online scheduler booked jobs
+      description: |
+        Jobs booked through the online scheduler widget — the same rows as the
+        dashboard "Scheduler Booked Jobs" CSV export. Column set varies by the
+        tenant's booking provider (ServiceTitan vs. session-based).
+      tags:
+        - Bookings
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CreatedOnOrAfter'
+        - $ref: '#/components/parameters/CreatedBefore'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Scheduler booked job rows retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pagination]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      oneOf:
+                        - $ref: '#/components/schemas/SchedulerBookedJobServiceTitanRow'
+                        - $ref: '#/components/schemas/SchedulerBookedJobSessionRow'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/public/metrics/scheduler/sessions:
+    get:
+      operationId: getSchedulerSessions
+      summary: Online scheduler sessions (booked and abandoned)
+      description: |
+        One row per online scheduler session, whether or not it booked. Includes the
+        furthest step reached, the entry source (`rwg` for Reserve with Google,
+        otherwise `website`), any service-area block with the rejected zip, and
+        the full marketing attribution captured on entry.
+      tags:
+        - Scheduler
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CreatedOnOrAfter'
+        - $ref: '#/components/parameters/CreatedBefore'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Scheduler session rows retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pagination]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SchedulerSessionRow'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/public/metrics/bookings/referrer:
+    get:
+      operationId: getReferrerBookings
+      summary: Referrer (RGL) booked jobs
+      description: |
+        Referral-generated-lead bookings attributed to a referrer — the same rows
+        as the dashboard "Referrer Booked Jobs" CSV export. Tenants without RGL
+        return an empty `data` array.
+      tags:
+        - Bookings
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CreatedOnOrAfter'
+        - $ref: '#/components/parameters/CreatedBefore'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Referrer booking rows retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pagination]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReferrerBookingRow'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/public/metrics/calls/outbound:
+    get:
+      operationId: getOutboundCallTranscripts
+      summary: Outbound call transcripts
+      description: |
+        Outbound (human CSR) ServiceTitan call transcripts ingested by the
+        call-scoring pipeline (transcript + summary; never scored). Returns CSV by
+        default, or the standard JSON envelope with `format=json`. Use `agentId` to
+        restrict the export to a specific subset of ServiceTitan agents. Both
+        formats share one paginated query, so a CSV response is bounded by
+        `pageSize` (max 5000) — page through the range to pull everything.
+      tags:
+        - Calls
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CreatedOnOrAfter'
+        - $ref: '#/components/parameters/CreatedBefore'
+        - $ref: '#/components/parameters/Format'
+        - $ref: '#/components/parameters/AgentId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Outbound call transcript rows retrieved successfully
+          content:
+            text/csv:
+              schema:
+                type: string
+                description: CSV export (header row + one row per call).
+            application/json:
+              schema:
+                type: object
+                required: [data, pagination]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OutboundCallTranscriptRow'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Tenant-scoped JWT token provided by Netic during onboarding
+
+  parameters:
+    Modality:
+      name: modality
+      in: query
+      required: true
+      description: Which interaction type to return.
+      schema:
+        type: string
+        enum: [call, inbound_text, recapture_text]
+    CreatedOnOrAfter:
+      name: createdOnOrAfter
+      in: query
+      required: true
+      description: Inclusive start of the date range (tenant's local timezone, YYYY-MM-DD).
+      schema:
+        type: string
+        format: date
+        example: '2026-01-01'
+    CreatedBefore:
+      name: createdBefore
+      in: query
+      required: true
+      description: Inclusive end of the date range (tenant's local timezone, YYYY-MM-DD).
+      schema:
+        type: string
+        format: date
+        example: '2026-01-31'
+    Page:
+      name: page
+      in: query
+      required: false
+      description: 1-based page number.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      required: false
+      description: Number of rows per page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 5000
+        default: 100
+    Format:
+      name: format
+      in: query
+      required: false
+      description: Response format — `csv` (default, downloadable) or `json` (paginated envelope).
+      schema:
+        type: string
+        enum: [csv, json]
+        default: csv
+    AgentId:
+      name: agentId
+      in: query
+      required: false
+      description: >-
+        Comma-separated ServiceTitan agent ids. When present, restricts the export
+        to those agents (matched against the ingested `service_titan_agent_id`).
+        Ingestion is unaffected — it captures all outbound calls.
+      schema:
+        type: string
+        example: '123456,789012'
+
+  responses:
+    BadRequest:
+      description: Invalid query parameters or pagination values
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: Unauthorized
+    ServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    PaginationMeta:
+      type: object
+      required: [page, pageSize, totalRecords, totalPages, hasMore]
+      properties:
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 100
+        totalRecords:
+          type: integer
+          example: 1342
+        totalPages:
+          type: integer
+          example: 14
+        hasMore:
+          type: boolean
+          example: true
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Error type
+          example: Invalid query parameters
+        message:
+          type: string
+          description: Human-readable error detail
+        details:
+          type: array
+          description: Field-level validation errors (when applicable)
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+        hint:
+          type: string
+          description: Guidance on the expected parameters
+
+    OutboundCallTranscriptRow:
+      type: object
+      description: >-
+        One outbound (human CSR) ServiceTitan call. All cell values are strings
+        (empty when absent) to match the CSV export exactly.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Netic's unique identifier for this call record.
+        service_titan_call_id:
+          type: string
+          description: ServiceTitan call id.
+        job_id:
+          type: string
+          description: ServiceTitan job id booked from this call, if any (empty otherwise).
+        tenant:
+          type: string
+          description: Tenant name.
+        call_placed_at:
+          type: string
+          description: When the call was placed (ISO 8601, tenant's local timezone).
+          example: '2026-07-03T09:15:00.000-07:00'
+        call_duration_seconds:
+          type: string
+        agent_id:
+          type: string
+          description: ServiceTitan agent (CSR) id.
+        agent_name:
+          type: string
+        customer_phone:
+          type: string
+        call_type:
+          type: string
+        call_reason:
+          type: string
+        summary:
+          type: string
+          description: AI-generated call summary.
+        transcript:
+          type: string
+        analysis:
+          type: string
+          description: >-
+            JSON-encoded analysis output (a JSONB blob written by the future
+            analysis layer); empty until populated.
+
+    InteractionRow:
+      type: object
+      description: One inbound interaction row. ServiceTitan fields are null for non-ServiceTitan tenants.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Netic's unique identifier for this interaction.
+          example: 3f2504e0-4f89-41d3-9a0c-0305e82c3301
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            Last-updated timestamp (ISO 8601 UTC) from Netic's analytics record.
+            Null when the interaction has no associated analytics record.
+          example: '2026-01-15T17:42:00.000Z'
+        postTransferUpdatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            Last time this row's post-interaction job attribution (Booked Live or
+            Booked Later) changed (ISO 8601 UTC). Null when no post-interaction job
+            has been attributed. Pair with updatedAt as the incremental-upsert
+            watermark: booked-later reconciliation moves this field, not updatedAt.
+          example: '2026-01-18T03:11:00.000Z'
+        tenant:
+          type: string
+          example: Acme Plumbing
+        phoneNumber:
+          type: string
+          example: '+17735551234'
+        date:
+          type: string
+          description: Interaction time in the tenant's timezone (MM/dd/yyyy HH:mm)
+          example: '01/15/2026 09:42'
+        leadStatus:
+          type: string
+          example: Lead
+        category:
+          type: string
+          example: Booked
+        reason:
+          type: string
+          example: Appointment booked
+        subReason:
+          type: string
+          example: 'N/A'
+        trade:
+          type: string
+          example: HVAC
+        workType:
+          type: string
+          example: Estimate
+        triagedJobType:
+          type: string
+          example: HVAC 6-10 Yr Demand
+        serviceTitanCallId:
+          type: string
+          nullable: true
+        serviceTitanCampaignId:
+          type: string
+          nullable: true
+        serviceTitanCampaignName:
+          type: string
+          nullable: true
+
+        modality:
+          type: string
+          enum: [Call, Text]
+          description: >-
+            Outcome channel matching the Digital Leads CSV Modality column. May be
+            Call for an inbound_text interaction booked or transferred by a follow-up
+            call; this is distinct from the request modality filter.
+        leadSource:
+          type: string
+          nullable: true
+          description: Session marketing source matching the Digital Leads CSV Lead Source column (e.g. angi, yelp, google-lsa).
+        gclid:
+          type: string
+          nullable: true
+          description: Digital lead gclid attribution, null when unavailable.
+        msclkid:
+          type: string
+          nullable: true
+          description: Digital lead msclkid attribution, null when unavailable.
+        utmSource:
+          type: string
+          nullable: true
+          description: Digital lead utm_source attribution, null when unavailable.
+        utmMedium:
+          type: string
+          nullable: true
+          description: Digital lead utm_medium attribution, null when unavailable.
+        utmCampaign:
+          type: string
+          nullable: true
+          description: Digital lead utm_campaign attribution, null when unavailable.
+        utmContent:
+          type: string
+          nullable: true
+          description: Digital lead utm_content attribution, null when unavailable.
+        utmTerm:
+          type: string
+          nullable: true
+          description: Digital lead utm_term attribution, null when unavailable.
+        utmId:
+          type: string
+          nullable: true
+          description: Digital lead utm_id attribution, null when unavailable.
+
+    TechnicianTglServiceTitanRow:
+      type: object
+      description: Technician TGL row for ServiceTitan tenants.
+      properties:
+        booked_at:
+          type: string
+        job_id:
+          type: string
+        job_type_name:
+          type: string
+        booked_by_technician_id:
+          type: string
+        technician_name:
+          type: string
+        source_business_unit:
+          type: string
+        booked_business_unit:
+          type: string
+        arrival_window_start:
+          type: string
+        id:
+          type: string
+          format: uuid
+          description: Netic's unique identifier for the booked job.
+        updated_at:
+          type: string
+          format: date-time
+          description: Last-updated timestamp of the booked job (ISO 8601 UTC).
+
+    TechnicianTglCargasRow:
+      type: object
+      description: Technician TGL activity row for Cargas tenants.
+      properties:
+        date:
+          type: string
+        outcome_type:
+          type: string
+        account_number:
+          type: string
+        source_job_id:
+          type: string
+        source_service_code:
+          type: string
+        technician_name:
+          type: string
+        service_type:
+          type: string
+        appointment_date:
+          type: string
+        advisor_name:
+          type: string
+        note_text:
+          type: string
+        booked_job_id:
+          type: string
+        id:
+          type: string
+          format: uuid
+          description: Netic's unique identifier for the scheduler session.
+        updated_at:
+          type: string
+          format: date-time
+          description: Last-updated timestamp of the scheduler session (ISO 8601 UTC).
+
+    SchedulerBookedJobServiceTitanRow:
+      type: object
+      description: Scheduler booked job row for ServiceTitan tenants.
+      properties:
+        session_created_at:
+          type: string
+        session_status:
+          type: string
+        session_source:
+          type: string
+        customer_phone_number:
+          type: string
+        service_titan_job_id:
+          type: string
+        service_titan_tenant_id:
+          type: string
+        job_type_id:
+          type: string
+        workflow:
+          type: string
+        marketing_campaign_id:
+          type: string
+        location_id:
+          type: string
+        booked_job_created_at:
+          type: string
+        utm_source:
+          type: string
+        utm_medium:
+          type: string
+        utm_campaign:
+          type: string
+        utm_term:
+          type: string
+        utm_content:
+          type: string
+        gclid:
+          type: string
+        fbclid:
+          type: string
+        msclkid:
+          type: string
+        landing_page_url:
+          type: string
+        referrer_url:
+          type: string
+        id:
+          type: string
+          format: uuid
+          description: Netic's unique identifier for the booked job.
+        updated_at:
+          type: string
+          format: date-time
+          description: Last-updated timestamp of the booked job (ISO 8601 UTC).
+
+    SchedulerBookedJobSessionRow:
+      type: object
+      description: Scheduler booked job row for non-ServiceTitan (session-based) tenants.
+      properties:
+        session_created_at:
+          type: string
+        session_status:
+          type: string
+        session_source:
+          type: string
+        outcome_type:
+          type: string
+        booked_job_id:
+          type: string
+        appointment_date:
+          type: string
+        advisor_name:
+          type: string
+        customer_name:
+          type: string
+        customer_phone_number:
+          type: string
+        customer_type:
+          type: string
+        street_address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        zip_code:
+          type: string
+        customer_id:
+          type: string
+        location_id:
+          type: string
+        trade:
+          type: string
+        work_type:
+          type: string
+        workflow:
+          type: string
+        job_type:
+          type: string
+        job_details:
+          type: string
+        utm_source:
+          type: string
+        utm_medium:
+          type: string
+        utm_campaign:
+          type: string
+        utm_term:
+          type: string
+        utm_content:
+          type: string
+        gclid:
+          type: string
+        fbclid:
+          type: string
+        msclkid:
+          type: string
+        landing_page_url:
+          type: string
+        referrer_url:
+          type: string
+        id:
+          type: string
+          format: uuid
+          description: Netic's unique identifier for the scheduler session.
+        updated_at:
+          type: string
+          format: date-time
+          description: Last-updated timestamp of the scheduler session (ISO 8601 UTC).
+
+    SchedulerSessionRow:
+      type: object
+      description: |
+        One online scheduler session. Every value is a string; empty when not captured.
+        Key columns: `status` (completed|abandoned), `last_step` (location, issue,
+        details, customer, schedule, confirmation, booked), `booked_from` (rwg|website),
+        `blocker_type` (out_of_area|do_not_service) with `blocker_detail` (the rejected
+        zip), `booked_job_id`, `se_campaign` (Schedule Engine campaign tag),
+        `utm_source/medium/campaign/term/content`, `gclid`, `gbraid`, `wbraid`,
+        `fbclid`, `msclkid`, `landing_page_url`, `referrer_url`, `marketing_source`
+        (paid|organic|other), `customer_is_new` and `location_is_new` (yes|no),
+        `issue_description` (the customer's own words), plus customer name, phone,
+        email, address, trade, job type, and the booked arrival window
+        (`appointment_start` / `appointment_end`).
+      additionalProperties:
+        type: string
+
+    ReferrerBookingRow:
+      type: object
+      description: Referrer (RGL) booking row.
+      properties:
+        referrer_email:
+          type: string
+        booked_at:
+          type: string
+        st_job_id:
+          type: string
+        job_type:
+          type: string
+        customer_name:
+          type: string
+        appointment_date:
+          type: string
+        status:
+          type: string
+        id:
+          type: string
+          format: uuid
+          description: Netic's unique identifier for the booked job.
+        updated_at:
+          type: string
+          format: date-time
+          description: Last-updated timestamp of the booked job (ISO 8601 UTC).

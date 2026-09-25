@@ -1,0 +1,33 @@
+{
+  "name": "hbsg-netic",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Claude Desktop extension for the Netic Reports Export API: interactions, bookings, scheduler sessions, outbound calls, counts, and exports.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=server/index.cjs --log-level=warning",
+    "test": "npm run build && vitest run",
+    "test:watch": "vitest",
+    "probe": "tsx scripts/probe.ts",
+    "smoke": "npm run build && tsx scripts/smoke.ts",
+    "inspect": "npm run build && npx @modelcontextprotocol/inspector node server/index.cjs",
+    "pack": "bash scripts/pack.sh"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@anthropic-ai/mcpb": "^2.1.2",
+    "@types/node": "^24.0.0",
+    "ajv": "^8.20.0",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}
