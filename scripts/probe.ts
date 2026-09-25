@@ -269,7 +269,16 @@ for (const t of tenants) {
     all.push({ tenant: t.name, fatal: describeError(err) });
   }
 }
-const summary = { runDay, baseUrl: config.baseUrl, start7, end, tenants: all };
-fs.writeFileSync(path.join(outRoot, "summary.json"), JSON.stringify(summary, null, 2));
+// Merge into the day's summary so probing one tenant keeps the others' results.
+const summaryPath = path.join(outRoot, "summary.json");
+let previous: Array<Record<string, unknown>> = [];
+try {
+  previous = (JSON.parse(fs.readFileSync(summaryPath, "utf8")) as { tenants?: Array<Record<string, unknown>> }).tenants ?? [];
+} catch {
+  /* first run today */
+}
+const probed = new Set(all.map((t) => t.tenant));
+const summary = { runDay, baseUrl: config.baseUrl, start7, end, tenants: [...previous.filter((t) => !probed.has(t.tenant)), ...all] };
+fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
 console.log(JSON.stringify(summary, null, 2));
 console.error(`\nRaw responses (PII, gitignored): ${outRoot}`);

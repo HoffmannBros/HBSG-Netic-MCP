@@ -2,7 +2,7 @@
 
 Handoff state for HBSG-Netic-MCP.
 
-**Last updated:** 2026-09-25 (v0.1.0 built, not yet probed live)
+**Last updated:** 2026-09-25 (v0.1.0, probed and smoke-tested live on all four tenants)
 
 ## Goal
 
@@ -20,54 +20,56 @@ Approved plan: `~/.claude/plans/we-re-going-to-build-abstract-pike.md`.
 | Repo, scaffold, remote `HoffmannBros/HBSG-Netic-MCP` | done, pushed to `main` |
 | Tenant config loader, GET-only client (web/leads blocked) | done |
 | 10 read-only tools, server entry, schema compat | done |
-| Tests (`npm test`) | 91 pass: unit, stdio handshake, every tool against a local fake API |
-| Probe and smoke scripts | written; probe dry-run against a local fake server works |
-| manifest.json (v0.4, 4 tenant slots), README, `scripts/pack.sh` | done |
-| `npm run pack` | passes; `dist/hbsg-netic-0.1.0.mcpb`, 272 KB, handshake ~210 ms |
-| `.env` with the four tokens | **not started: Justin pastes them himself** |
-| `npm run probe` against live tenants | not started (needs tokens) |
-| Record live findings in `docs/netic-api.md`, fix any drift | not started |
-| `npm run smoke` against a live tenant | not started (needs tokens) |
-| Install the .mcpb in Claude Desktop and try it | not started |
-| Tag and GitHub Release | not started |
+| Tests (`npm test`) | 92 pass: unit, stdio handshake, every tool against a local fake API |
+| `.env` with the four tokens | done (Justin pasted them; gitignored) |
+| `npm run probe`, all four tenants | done 2026-09-25; findings in `docs/netic-api.md` |
+| Drift fixes from the probe | done: default columns, scheduler-bookings 500 retry and hint |
+| `npm run smoke`, all four tenants | **passed** 2026-09-25 |
+| `npm run pack` | passes; `dist/hbsg-netic-0.1.0.mcpb` |
+| Install the .mcpb in Claude Desktop and try it | not started (Justin double-clicks it) |
+| Tag `v0.1.0` and GitHub Release | not started |
 
 ## Next actions, in order
 
-1. `cp .env.example .env`, then Justin pastes the four tokens into `.env`. Never through chat.
-2. `npm run probe` (or `npm run probe -- stl` for one tenant). Read the console summary
-   (shapes only; raw rows are in `probe-output/<date>/<tenant>/`).
-3. Record the dated, redacted findings in `docs/netic-api.md` "Live findings" and in
-   "Verified facts" below. Fix any drift:
-   - if a maximum date range exists, split long ranges into chunks in `src/paging.ts`
-     (plan: the client splits long ranges);
-   - if row keys differ from the spec, update `src/endpoints.ts` default columns and
-     `scripts/spec-keys.ts`;
-   - if the inclusive-bounds check fails, fix the `endArg` description and AGENTS.md.
-4. `npm run smoke -- <tenant>` for each tenant, then `npm run pack`.
-5. Justin installs `dist/hbsg-netic-0.1.0.mcpb` and asks something like "Blue Sky booked calls
-   by lead source last week".
-6. Tag `v0.1.0` and create the GitHub Release with the .mcpb attached.
+1. Justin installs `dist/hbsg-netic-0.1.0.mcpb`, pastes the four tokens into the extension's
+   settings, and asks something like "Blue Sky booked calls by lead source last week".
+2. Fix anything found in real use, then tag `v0.1.0` and create the GitHub Release with the
+   .mcpb attached (`gh` is installed).
+3. Raise the scheduler-bookings timeouts with Netic (see "Verified facts").
 
-## Verified facts
+## Verified facts (live 2026-09-25 unless noted)
 
-- The remote was empty before the first push (2026-09-25).
-- `gh` **is** installed on this Windows machine (`C:\Program Files\GitHub CLI\gh.exe`); the
-  earlier handoff said otherwise.
+- Both date bounds are inclusive; single-day totals sum exactly to the week on all tenants.
+- No maximum date range: 731 days returns 200. Latency grows with range (stl interactions
+  at pageSize 1: 31 d 4 s, 92 d 20 s, 366 d 61 s). So no range chunking was built.
+- pageSize 5001 and 0 get 400. End before start gets 200 with no rows, not an error.
+- Scheduler bookings: 9 to 16 s per cold request regardless of range, and a 500 past about
+  15 s. A retry often lands, and warm calls answer in under 2.5 s. The client retries 500s
+  on that endpoint only.
+- Every tenant is ServiceTitan (TGL and scheduler-bookings shapes). Ferguson has no TGL or
+  outbound calls; only Ferguson and STL have referrer bookings.
+- Row `tenant` values: `STL Hoffmann`, `NASH Hoffmann`, `Blue Sky`, `Ferguson`.
+- Tokens are HS256 JWTs with `tenant_id` and `iat` and no expiry. A signature that decodes
+  to 31 bytes instead of 32 means a truncated paste (it happened with stl).
+- `gh` is installed on this Windows machine (`C:\Program Files\GitHub CLI\gh.exe`).
 - Global `core.autocrlf` is on; `.gitattributes` keeps `*.sh` LF so `pack.sh` runs.
-- The spec settles `createdBefore` as inclusive; the live check is pending.
 
 ## Decisions worth knowing
 
 - `netic_get_*` put rows only in the text (a markdown table of default columns) and keep
   `structuredContent` to metadata, so a 500-row sample is not sent twice.
+- Interaction default columns now include `postTransferOutcome`, `jobId`, and
+  `callDurationTotal` (undocumented but present everywhere). Session defaults use
+  `session_created_at`, `session_source`, and `device_type`.
 - A `where` equality filter (client-side) is on the get, count, and export tools. The
   sessions tool also takes `status` and `last_step`, which map onto it.
 - `netic_export` keeps outbound transcripts by default (they go to a file);
   `netic_get_outbound_calls` drops them by default.
-- The probe's deliberately invalid calls (pageSize 5001, bad modality, no token) bypass the
-  client preflight through `rawGet`, which accepts only the six report paths.
-- Tenant labels (Hoffmann STL, Hoffmann NSH, Blue Sky, Ferguson STL) live in
-  `src/tools/common.ts` and in the tenant argument's description.
+- The probe's deliberately invalid calls bypass the client preflight through `rawGet`, which
+  accepts only the six report paths. The day's `summary.json` merges per tenant, so
+  `npm run probe -- stl` keeps the other tenants' results.
+- Range windowing was tried for scheduler bookings and backed out: latency does not depend on
+  range there, so splitting only multiplies slow calls.
 
 ## Ideas not built (YAGNI until asked)
 
@@ -76,5 +78,7 @@ Approved plan: `~/.claude/plans/we-re-going-to-build-abstract-pike.md`.
 - Joining to ServiceTitan by job id or call id (the ServiceTitan MCP is a sibling).
 - Date bucketing in `netic_count` (group by day, week, or month); dates differ per endpoint
   (`MM/dd/yyyy HH:mm` on interactions, ISO elsewhere).
+- Adding the 14 undocumented interaction columns to `scripts/spec-keys.ts` so the probe
+  reports only new drift.
 - CSV formula-injection guard: phone numbers start with `+`, so Excel may read them as
   numbers. Not changed, since escaping would alter the data for other consumers.

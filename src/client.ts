@@ -24,6 +24,7 @@ export const MAX_PAGE_SIZE = 5000;
 const REPORT_PATHS = new Set(Object.values(REPORT_INFO).map((r) => r.path));
 const INTERACTIONS_PATH = REPORT_INFO.interactions.path;
 const OUTBOUND_PATH = REPORT_INFO.outbound_calls.path;
+const SCHEDULER_BOOKINGS_PATH = REPORT_INFO.scheduler_bookings.path;
 
 export class NeticApiError extends Error {
   override name = "NeticApiError";
@@ -75,7 +76,7 @@ export function assertAllowedPath(path: string): void {
   }
 }
 
-function hintFor(status: number, tenant: string): string {
+function hintFor(status: number, tenant: string, path: string): string {
   switch (status) {
     case 401:
       return `The token for tenant "${tenant}" was rejected. Check it in Claude Desktop under Settings, Extensions, Netic, or in .env as NETIC_TENANT_${tenant.toUpperCase().replace(/-/g, "_")}_TOKEN.`;
@@ -86,6 +87,10 @@ function hintFor(status: number, tenant: string): string {
     case 429:
       return "Netic is rate limiting. Wait a minute and retry with fewer, larger pages.";
     case 500:
+      if (path === SCHEDULER_BOOKINGS_PATH) {
+        return "Netic's scheduler-bookings export runs 9 to 16 seconds per request whatever the range, and Netic returns 500 past about 15 seconds; it was already retried. Try again in a minute, or use scheduler_sessions (booked sessions carry booked_job_id) as a stand-in.";
+      }
+      return "Netic had a server error. Retry, or use a shorter date range.";
     case 502:
     case 503:
     case 504:
@@ -234,12 +239,15 @@ export class NeticClient {
       const body = await parseErrorBody(res);
       const retryAfterRaw = res.headers.get("retry-after");
       const retryAfter = retryAfterRaw && /^\d+$/.test(retryAfterRaw) ? Number(retryAfterRaw) : undefined;
-      const error = new NeticApiError(res.status, body.error, this.tenant, path, hintFor(res.status, this.tenant), body.details, body.hint);
+      const error = new NeticApiError(res.status, body.error, this.tenant, path, hintFor(res.status, this.tenant, path), body.details, body.hint);
       if (res.status === 429 && attempt === 1 && retryAfter !== undefined && retryAfter <= 60) {
         await this.sleep(retryAfter * 1000);
         continue;
       }
-      if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < this.maxAttempts) {
+      // Scheduler bookings 500 when Netic's own ~15 s query timeout trips, and
+      // a retry often lands (live 2026-09-25). Other 500s are not retried.
+      const transient = res.status === 502 || res.status === 503 || res.status === 504 || (res.status === 500 && path === SCHEDULER_BOOKINGS_PATH);
+      if (transient && attempt < this.maxAttempts) {
         await this.sleep(retryAfter !== undefined ? retryAfter * 1000 : backoffMs(attempt));
         continue;
       }

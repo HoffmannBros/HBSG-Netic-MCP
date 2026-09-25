@@ -157,7 +157,15 @@ describe("NeticClient", () => {
     expect(calls).toHaveLength(2);
   });
 
-  it("does not retry a 500", async () => {
+  it("retries a 500 on scheduler bookings, which times out server-side, then gives the hint", async () => {
+    const { client, calls } = makeClient(() => jsonResponse({ error: "Failed to fetch scheduler booked jobs" }, 500));
+    const err = (await client.get("/api/public/metrics/bookings/scheduler", range).catch((e: unknown) => e)) as NeticApiError;
+    expect(calls).toHaveLength(3);
+    expect(err.message).toMatch(/already retried/);
+    expect(err.message).toMatch(/scheduler_sessions/);
+  });
+
+  it("does not retry a 500 elsewhere", async () => {
     const { client, calls } = makeClient(() => jsonResponse({ error: "boom" }, 500));
     await expect(client.get("/api/public/metrics/bookings/referrer", range)).rejects.toThrow(/500/);
     expect(calls).toHaveLength(1);

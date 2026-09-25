@@ -77,6 +77,10 @@ bearer JWT per tenant. TypeScript, Node, MCP SDK 1.x, bundled by esbuild into
 - `calls/outbound` returns CSV unless `format=json`. The client always sends `format=json`.
   Transcripts are huge; `include_transcript` defaults to false.
 - Scheduler session values are all strings, including counts and yes/no flags.
+- Interactions carry 14 columns the spec omits (call durations, transfer and post-transfer
+  outcome, `jobId`, `bookedByOther`); see "Live findings" in `docs/netic-api.md`.
+- Scheduler bookings can take ~15 s and then 500 on a cold call; the client retries that one
+  endpoint's 500s. Long ranges are fine everywhere; latency, not a limit, is the cost.
 
 ## Pointers
 
