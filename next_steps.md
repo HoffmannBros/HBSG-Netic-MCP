@@ -2,7 +2,7 @@
 
 Handoff state for HBSG-Netic-MCP.
 
-**Last updated:** 2026-09-25 (v0.2.0: utilization tool and the inline-rows fix, verified live
+**Last updated:** 2026-09-29 (v0.2.0 released; utilization tool and the inline-rows fix, verified live
 and against the Utilization Board UI)
 
 ## Goal
@@ -31,19 +31,14 @@ inline rows; done).
 | Drift fixes from the probe | done: default columns, scheduler-bookings 500 retry and hint |
 | `npm run smoke`, all four tenants | **passed** 2026-09-25 |
 | `npm run pack` | passes; `dist/hbsg-netic-0.2.0.mcpb` |
-| Install the .mcpb in Claude Desktop and try it | not started (Justin double-clicks it) |
-| Tag and GitHub Release | not started (skip v0.1.0; release v0.2.0) |
+| Install the .mcpb in Claude Desktop and try it | done 2026-09-29: installed over v0.1.0, works, rows inline |
+| Tag and GitHub Release | done: `v0.2.0` (v0.1.0 was never released) |
 
 ## Next actions, in order
 
-1. Justin installs `dist/hbsg-netic-0.2.0.mcpb`, pastes the four tokens into the extension's
-   settings, and tries "Blue Sky booked calls by lead source last week" and "how booked is
-   Blue Sky's HVAC Service group tomorrow". Check that rows come back inline from
-   `netic_api_call` on `/api/public/metrics/utilization` (the v0.1.0 bug was
-   `{"returned":14}` with no rows).
-2. Fix anything found in real use, then tag `v0.2.0` and create the GitHub Release with the
-   .mcpb attached (`gh` is installed).
-3. Raise the scheduler-bookings timeouts with Netic (see "Verified facts").
+1. Share the release with the team: https://github.com/HoffmannBros/HBSG-Netic-MCP/releases/tag/v0.2.0
+2. Raise the scheduler-bookings timeouts with Netic (see "Verified facts").
+3. Anything from "Ideas not built" only when someone asks for it.
 
 ## Verified facts (live 2026-09-25 unless noted)
 
