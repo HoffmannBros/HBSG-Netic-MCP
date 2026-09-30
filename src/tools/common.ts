@@ -55,6 +55,13 @@ export const reportArg = z
     "interactions (needs modality), scheduler_sessions, scheduler_bookings, tgl_bookings, referrer_bookings, outbound_calls, or utilization (Utilization Board: % booked per business unit or group per day).",
   );
 
+/** Count and export also take the derived scheduler_leads report. */
+export const countReportArg = z
+  .enum([...REPORTS, "scheduler_leads"])
+  .describe(
+    "interactions (needs modality), scheduler_sessions, scheduler_bookings, tgl_bookings, referrer_bookings, outbound_calls, utilization (Utilization Board: % booked per business unit or group per day), or scheduler_leads (the dashboard's online scheduler leads export: identified sessions with bounce follow-up flags, as in netic_get_scheduler_leads; columns such as Booked, Furthest Stage Reached, Service, UTM Source, recovered).",
+  );
+
 export const fieldsArg = z
   .array(z.string().min(1))
   .min(1)

@@ -35,6 +35,8 @@ Export all Ferguson call interactions for August to CSV.
 What were the most common outbound call reasons for STL this week?
 How booked is Blue Sky's HVAC Service group tomorrow, and how full was it at 8 AM yesterday?
 Blue Sky % booked per business unit for last week.
+Who bounced off the Blue Sky online scheduler yesterday and hasn't come back?
+STL online scheduler bounces by Service and UTM source this month.
 ```
 
 ## What Claude can do
@@ -44,12 +46,13 @@ Blue Sky % booked per business unit for last week.
 | `netic_list_tenants` | Configured tenant names |
 | `netic_get_interactions` | Inbound calls, texts, or recapture texts (pick a modality) |
 | `netic_get_scheduler_sessions` | Online scheduler sessions, booked and abandoned, with the last step reached |
+| `netic_get_scheduler_leads` | The dashboard's "online scheduler leads" export, plus repeat, rebooked, contacted-later, and recovered flags and a bounce summary |
 | `netic_get_scheduler_bookings` | Jobs booked through the online scheduler, with UTMs and click ids |
 | `netic_get_tgl_bookings` | Technician turn-the-lead bookings |
 | `netic_get_referrer_bookings` | Referrer (RGL) bookings |
 | `netic_get_outbound_calls` | Outbound CSR calls with summaries; transcripts on request |
 | `netic_get_utilization` | Utilization Board: % booked per business unit and group per day, live or point in time |
-| `netic_count` | Counts across every page, grouped by up to three columns; `aggregate=sum` totals utilization hours and recomputes % booked |
+| `netic_count` | Counts across every page, grouped by up to three columns; `aggregate=sum` totals utilization hours and recomputes % booked; `report=scheduler_leads` counts leads by any export column |
 | `netic_export` | Every row of a report to a CSV or JSON file |
 | `netic_api_call` | A Netic report path directly, GET only |
 

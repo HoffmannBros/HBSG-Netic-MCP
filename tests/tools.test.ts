@@ -38,7 +38,22 @@ function utilizationRows(url: URL): Array<Record<string, unknown>> {
   return out;
 }
 
+/** Scheduler sessions: four leads in 2026-09-01..07, one earlier repeat, and two that are not leads. */
+function sessionRows(): Array<Record<string, unknown>> {
+  const base = { status: "abandoned", customer_name: "", customer_phone_number: "", street_address: "", zip_code: "", job_type: "", utm_source: "", booked_job_id: "" };
+  return [
+    { ...base, id: "sA", session_created_at: "2026-09-01 08:00:00", last_step: "schedule", customer_name: "A", customer_phone_number: "555-555-0100", job_type: "AC Repair", utm_source: "google" },
+    { ...base, id: "sB", session_created_at: "2026-09-02 10:00:00", last_step: "customer", customer_name: "B", customer_phone_number: "3145550111", job_type: "Drain" },
+    { ...base, id: "sC", session_created_at: "2026-09-03 11:00:00", status: "completed", last_step: "booked", customer_name: "B", customer_phone_number: "(314) 555-0111", job_type: "Drain", booked_job_id: "J1" },
+    { ...base, id: "sD", session_created_at: "2026-09-04 12:00:00", last_step: "confirmation", customer_name: "D", street_address: "1 Main St", zip_code: "63101", job_type: "AC Repair" },
+    { ...base, id: "sE", session_created_at: "2026-09-05 12:00:00", last_step: "issue" },
+    { ...base, id: "sF", session_created_at: "2026-08-20 09:00:00", last_step: "details", customer_name: "B", customer_phone_number: "3145550111" },
+    { ...base, id: "sG", session_created_at: "2026-09-06 09:00:00", status: "completed", last_step: "booked", customer_name: "G" },
+  ];
+}
+
 function rowsFor(pathname: string): Array<Record<string, unknown>> {
+  if (pathname.endsWith("/scheduler/sessions")) return sessionRows();
   if (pathname.endsWith("/interactions")) {
     return Array.from({ length: 1234 }, (_, i) => ({
       id: `i${i}`,
@@ -288,6 +303,66 @@ describe("tools against a fake Netic API", () => {
     });
     expect(textOf(result)).toMatch(/Warning: these totals mix group rows with business_unit rows/);
     expect((result.structuredContent as { mixesTypes: boolean }).mixesTypes).toBe(true);
+  });
+
+  it("builds scheduler leads with follow-up flags and a summary", async () => {
+    seen.length = 0;
+    const result = await client.callTool({ name: "netic_get_scheduler_leads", arguments: { tenant: "stl", ...range } });
+    expect(result.isError).toBeFalsy();
+    const s = result.structuredContent as {
+      summary: { leads: number; booked: number; abandoned: number; recovered: number; stillBounced: number };
+      rows: Array<Record<string, unknown>>;
+      fetchStart: string;
+    };
+    expect(s.summary).toMatchObject({ leads: 4, booked: 1, abandoned: 3, recovered: 2, stillBounced: 1 });
+    expect(s.fetchStart).toBe("2026-08-25");
+    const byName = (n: string, booked: string) => s.rows.find((r) => r.Name === n && r.Booked === booked);
+    expect(byName("A", "No")).toMatchObject({ contacted_later: "Yes", contacted_later_category: "Booked", recovered: "Yes", "Furthest Stage Reached": "Schedule (stage 4 of 6)" });
+    expect(byName("B", "No")).toMatchObject({ booked_later: "Yes", attempt: 2, recovered: "Yes" });
+    expect(byName("D", "No")).toMatchObject({ contacted_later: "No", recovered: "No" });
+    const paths = new Set(seen.map((x) => x.url.pathname));
+    expect(paths).toEqual(new Set(["/api/public/metrics/scheduler/sessions", "/api/public/metrics/interactions"]));
+    expect(new Set(seen.filter((x) => x.url.pathname.endsWith("/interactions")).map((x) => x.url.searchParams.get("modality")))).toEqual(
+      new Set(["call", "inbound_text", "recapture_text"]),
+    );
+    expect(seen.find((x) => x.url.pathname.endsWith("/sessions"))?.url.searchParams.get("createdOnOrAfter")).toBe("2026-08-25");
+    expect(textOf(result)).toContain("4 lead(s)");
+    expect((result.structuredContent as { followUp: Record<string, unknown> }).followUp).toMatchObject({ contactsChecked: true, windowDays: 7, windowStillOpen: false });
+  });
+
+  it("leaves only the still-bounced leads for a digest, and skips contacts when asked", async () => {
+    seen.length = 0;
+    const result = await client.callTool({
+      name: "netic_get_scheduler_leads",
+      arguments: { tenant: "stl", booked: "no", exclude_recovered: true, check_contacts: false, ...range },
+    });
+    const s = result.structuredContent as { rows: Array<Record<string, unknown>> };
+    expect(s.rows.map((r) => r.Name)).toEqual(["A", "D"]);
+    expect(seen.every((x) => x.url.pathname.endsWith("/scheduler/sessions"))).toBe(true);
+    expect(textOf(result)).toContain("contact check skipped");
+    const f = (result.structuredContent as { followUp: { contactsChecked: boolean; interactionsChecked: number | null; caveat: string } }).followUp;
+    expect(f).toMatchObject({ contactsChecked: false, interactionsChecked: null });
+    expect(f.caveat).toMatch(/contacts were not checked/);
+  });
+
+  it("counts scheduler leads by an export column", async () => {
+    const result = await client.callTool({ name: "netic_count", arguments: { tenant: "stl", report: "scheduler_leads", group_by: ["Service"], where: { Booked: "No" }, ...range } });
+    expect(result.isError).toBeFalsy();
+    const s = result.structuredContent as { total: number; groups: Array<{ values: string[]; count: number }> };
+    expect(s.total).toBe(3);
+    expect(s.groups[0]).toEqual({ values: ["AC Repair"], count: 2 });
+    expect(textOf(result)).toMatch(/^3 online scheduler leads/);
+    expect((result.structuredContent as { followUp?: { contactsChecked: boolean } }).followUp?.contactsChecked).toBe(true);
+  });
+
+  it("exports scheduler leads with the export's header order", async () => {
+    const result = await client.callTool({ name: "netic_export", arguments: { tenant: "stl", report: "scheduler_leads", check_contacts: false, ...range } });
+    expect(result.isError).toBeFalsy();
+    const s = result.structuredContent as { path: string; rows: number };
+    expect(s.rows).toBe(4);
+    expect(path.basename(s.path)).toBe("netic_stl_scheduler_leads_2026-09-01_2026-09-07.csv");
+    const header = (await fsp.readFile(s.path, "utf8")).replace(/^﻿/, "").split(/\r?\n/)[0];
+    expect(header?.startsWith("Tenant,Date,Name,Identified By,Phone Number,Street Address,City,State,Zip Code,Booked,Furthest Stage Reached,Service,UTM Source,UTM Medium,UTM Campaign,")).toBe(true);
   });
 
   it("refuses aggregate=sum on reports other than utilization", async () => {

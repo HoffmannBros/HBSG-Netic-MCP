@@ -2,8 +2,8 @@
 
 Handoff state for HBSG-Netic-MCP.
 
-**Last updated:** 2026-09-29 (v0.2.0 released; utilization tool and the inline-rows fix, verified live
-and against the Utilization Board UI)
+**Last updated:** 2026-09-30 (v0.3.0 released: online scheduler leads, verified live; not yet
+installed in Claude Desktop)
 
 ## Goal
 
@@ -14,7 +14,8 @@ blue, ferg). TypeScript on Node, bundled to one file with esbuild, mirroring
 
 Plans: `~/.claude/plans/we-re-going-to-build-abstract-pike.md` (v0.1.0) and
 `~/.claude/plans/pasted-content-id-2a3f-add-support-wiggly-bunny.md` (v0.2.0 utilization and
-inline rows; done).
+inline rows; done), `~/.claude/plans/c-users-justin-schmidt-downloads-online-foamy-squid.md`
+(v0.3.0 online scheduler leads; released, install pending).
 
 ## Where things stand
 
@@ -22,23 +23,31 @@ inline rows; done).
 |---|---|
 | Repo, scaffold, remote `HoffmannBros/HBSG-Netic-MCP` | done, pushed to `main` |
 | Tenant config loader, GET-only client (web/leads blocked) | done |
-| 11 read-only tools, server entry, schema compat | done (v0.2.0 added `netic_get_utilization`) |
-| Tests (`npm test`) | 118 pass: unit, stdio handshake, every tool against a local fake API |
+| 12 read-only tools, server entry, schema compat | done (v0.2.0 added `netic_get_utilization`, v0.3.0 `netic_get_scheduler_leads`) |
+| Tests (`npm test`) | 134 pass: unit, stdio handshake, every tool against a local fake API |
+| Online scheduler leads: tool, `report=scheduler_leads` in count and export | done 2026-09-30; 807 of 807 rows and all 15 columns match the dashboard CSV (blue, 8/30 to 9/30) |
 | Rows missing from tool results (only `structuredContent` reaches the model) | fixed in v0.2.0: rows now in `structuredContent` for get, api_call, and export preview |
 | Utilization: tool, `netic_count aggregate=sum`, export, api_call docs | done; 70 of 70 UI cells match (`docs/utilization-ui-findings.md`) |
 | `.env` with the four tokens | done (Justin pasted them; gitignored) |
 | `npm run probe`, all four tenants | done 2026-09-25; findings in `docs/netic-api.md` |
 | Drift fixes from the probe | done: default columns, scheduler-bookings 500 retry and hint |
-| `npm run smoke`, all four tenants | **passed** 2026-09-25 |
-| `npm run pack` | passes; `dist/hbsg-netic-0.2.0.mcpb` |
+| `npm run smoke`, all four tenants | **passed** 2026-09-30 (ferg's 45-day utilization call got one Netic 500 at 15 s; the rerun passed) |
+| `npm run pack` | passes; `dist/hbsg-netic-0.3.0.mcpb` |
 | Install the .mcpb in Claude Desktop and try it | done 2026-09-29: installed over v0.1.0, works, rows inline |
-| Tag and GitHub Release | done: `v0.2.0` (v0.1.0 was never released) |
+| Tag and GitHub Release | done: `v0.3.0` 2026-09-30 (`v0.2.0` before it; v0.1.0 was never released) |
 
 ## Next actions, in order
 
-1. Share the release with the team: https://github.com/HoffmannBros/HBSG-Netic-MCP/releases/tag/v0.2.0
-2. Raise the scheduler-bookings timeouts with Netic (see "Verified facts").
-3. Anything from "Ideas not built" only when someone asks for it.
+1. Install `dist/hbsg-netic-0.3.0.mcpb` in Claude Desktop and ask "who bounced off the Blue
+   Sky online scheduler yesterday and hasn't come back?" and "bounces by Service and UTM
+   source this month".
+2. Share the release with the team:
+   https://github.com/HoffmannBros/HBSG-Netic-MCP/releases/tag/v0.3.0 (v0.2.0 was never
+   announced either).
+3. Build the Cowork daily bounced digest on top of `netic_get_scheduler_leads` (`booked=no,
+   exclude_recovered=true, start=end=yesterday`).
+4. Raise the scheduler-bookings timeouts with Netic (see "Verified facts").
+5. Anything from "Ideas not built" only when someone asks for it.
 
 ## Verified facts (live 2026-09-25 unless noted)
 
@@ -63,6 +72,11 @@ inline rows; done).
   `docs/utilization-ui-findings.md`.
 - The Utilization Board UI calls an internal `/api/dashboard/capacity/utilization-board`,
   not the public endpoint, but the values agree cell for cell.
+- Online scheduler leads (2026-09-30): the dashboard export is `scheduler/sessions` with a
+  phone or street address; mapping and parity in `docs/netic-api.md`. Last Known Step is not
+  in the public API. Values are untrimmed in the export (trailing spaces in City).
+- `netic_get_interactions` with a narrow `where` over a month walks 100-row pages and can pass
+  the MCP client's 60 s timeout; `netic_export` with the same `where` uses 5000-row pages.
 - Global `core.autocrlf` is on; `.gitattributes` keeps `*.sh` LF so `pack.sh` runs.
 
 ## Decisions worth knowing
@@ -90,6 +104,15 @@ inline rows; done).
 - The probe's deliberately invalid calls bypass the client preflight through `rawGet`, which
   accepts only the six report paths. The day's `summary.json` merges per tenant, so
   `npm run probe -- stl` keeps the other tenants' results.
+- Scheduler leads: `booked_later` and `contacted_later` count only within `repeat_window_days`
+  (default 7) of each session, so a lead's flags do not depend on how long a range was asked
+  for. The plan only widened the fetch; the per-lead cap was added after a hand check found a
+  first contact 16 days out being counted in a month-long pull. Contacts match by phone only
+  (interactions carry no address), at or after the session's minute. `recovered` = booked
+  later, or the contact has a job id or category Booked.
+- Scheduler leads results carry a `followUp` block in `structuredContent` (contactsChecked,
+  window, windowStillOpen, and a caveat line), since the footer notes never reach the model.
+  The tool description and `INSTRUCTIONS` tell the agent to relay the caveat when it matters.
 - Range windowing was tried for scheduler bookings and backed out: latency does not depend on
   range there, so splitting only multiplies slow calls.
 

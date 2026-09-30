@@ -8,13 +8,14 @@ import { footer, markdownTable, textResult } from "../format.js";
 import { rangeNotes, walkRange } from "../paging.js";
 import { wherePredicate } from "../rows.js";
 import { NO_SHIFTS, utilizationNotes } from "../utilization.js";
+import { LEADS_LABEL, LEADS_REPORT, checkContactsArg, collectLeads, repeatWindowArg, type FollowUpInfo } from "./leads.js";
 import {
   READ_ONLY,
   agentIdsArg,
   endArg,
   guarded,
+  countReportArg,
   modalityArg,
-  reportArg,
   reportParams,
   snapshotDateArg,
   snapshotTimeArg,
@@ -34,7 +35,7 @@ export function registerAggregateTools(server: McpServer, ctx: AppContext): void
         "Dates are YYYY-MM-DD, both inclusive, tenant local time.",
       inputSchema: {
         tenant: tenantArg(ctx),
-        report: reportArg,
+        report: countReportArg,
         modality: modalityArg.optional().describe("Required when report is interactions: call, inbound_text, or recapture_text."),
         start: startArg,
         end: endArg,
@@ -47,6 +48,8 @@ export function registerAggregateTools(server: McpServer, ctx: AppContext): void
         agent_ids: agentIdsArg,
         snapshot_date: snapshotDateArg,
         snapshot_time: snapshotTimeArg,
+        check_contacts: checkContactsArg.describe("scheduler_leads only: " + (checkContactsArg.description ?? "")),
+        repeat_window_days: repeatWindowArg.describe("scheduler_leads only: " + (repeatWindowArg.description ?? "")),
         top: z.number().int().min(1).max(1000).default(50).describe("Groups to show, largest first. Default 50; the total always covers every group."),
         max_rows: z
           .number()
@@ -63,33 +66,53 @@ export function registerAggregateTools(server: McpServer, ctx: AppContext): void
         throw new NeticRequestError("aggregate=sum applies only to report=utilization. Use aggregate=count for other reports.");
       }
       const client = ctx.clientFor(args.tenant);
-      const info = REPORT_INFO[args.report];
-      const params = reportParams(args.report, args);
       const sum = args.aggregate === "sum";
       const counter = new GroupCounter(args.group_by);
       const summer = new GroupSummer(args.group_by);
-      const filter = wherePredicate(args.where);
-      const before = client.requestCount;
-      const result = await walkRange(client, args.report, params, args.start, args.end, {
-        pageSize: 5000,
-        maxRows: args.max_rows,
-        filter,
-        onRows: (rows) => (sum ? summer.addMany(rows) : counter.addMany(rows)),
-      });
-      const apiCalls = client.requestCount - before;
-      const notes = args.report === "utilization" ? utilizationNotes(result.extras) : [];
-      notes.push(...rangeNotes(result, info.maxRangeDays));
+      let label: string;
+      let result: { totalRecords: number; hasMore: boolean; scanned: number; extras: Record<string, unknown> };
+      let filtered: boolean;
+      let apiCalls: number;
+      let notes: string[];
+      let followUp: FollowUpInfo | undefined;
+      if (args.report === LEADS_REPORT) {
+        const leads = await collectLeads(client, args);
+        counter.addMany(leads.rows);
+        label = LEADS_LABEL;
+        result = { totalRecords: leads.totalRecords, hasMore: false, scanned: leads.scanned, extras: {} };
+        filtered = true;
+        apiCalls = leads.apiCalls;
+        notes = leads.notes;
+        followUp = leads.followUp;
+      } else {
+        const info = REPORT_INFO[args.report];
+        const params = reportParams(args.report, args);
+        const filter = wherePredicate(args.where);
+        const before = client.requestCount;
+        const walked = await walkRange(client, args.report, params, args.start, args.end, {
+          pageSize: 5000,
+          maxRows: args.max_rows,
+          filter,
+          onRows: (rows) => (sum ? summer.addMany(rows) : counter.addMany(rows)),
+        });
+        result = walked;
+        label = info.label;
+        filtered = filter !== undefined;
+        apiCalls = client.requestCount - before;
+        notes = args.report === "utilization" ? utilizationNotes(result.extras) : [];
+        notes.push(...rangeNotes(walked, info.maxRangeDays));
+      }
       const footerText = (total: number) =>
         footer({
           tenant: client.tenant,
-          label: info.label,
+          label,
           start: args.start,
           end: args.end,
           returned: total,
           totalRecords: result.totalRecords,
           hasMore: result.hasMore,
           scanned: result.scanned,
-          filtered: filter !== undefined,
+          filtered,
           apiCalls,
           moreHint: "The max_rows scan cap was hit, so the totals are partial. Raise max_rows or narrow the dates.",
           notes,
@@ -146,7 +169,7 @@ export function registerAggregateTools(server: McpServer, ctx: AppContext): void
       });
       const missing = args.group_by.filter((f) => counter.total > 0 && groups.every((g) => g.values[args.group_by.indexOf(f)] === "(blank)"));
       const lines = [
-        `${counter.total} ${info.label} for tenant ${client.tenant}${args.modality ? ` (modality ${args.modality})` : ""}, in ${groups.length} group(s)${shown.length < groups.length ? `, top ${shown.length} shown` : ""}.`,
+        `${counter.total} ${label} for tenant ${client.tenant}${args.modality ? ` (modality ${args.modality})` : ""}, in ${groups.length} group(s)${shown.length < groups.length ? `, top ${shown.length} shown` : ""}.`,
         markdownTable(tableRows, [...args.group_by, "count", "share"]),
       ];
       if (missing.length > 0) {
@@ -164,6 +187,7 @@ export function registerAggregateTools(server: McpServer, ctx: AppContext): void
         total: counter.total,
         groupCount: groups.length,
         groups: shown.map((g) => ({ values: g.values, count: g.count })),
+        ...(followUp ? { followUp } : {}),
         totalRecords: result.totalRecords,
         scanned: result.scanned,
         hasMore: result.hasMore,

@@ -63,6 +63,7 @@ try {
   await call("netic_list_tenants", {});
   await call("netic_get_interactions", { ...range, modality: "call", max_rows: 5, fields: ["date", "category", "reason", "trade", "leadSource"] });
   await call("netic_get_scheduler_sessions", { ...range, max_rows: 5, fields: ["status", "last_step", "booked_from", "marketing_source"] });
+  await call("netic_get_scheduler_leads", { tenant, start: end, end, booked: "no", exclude_recovered: true, fields: ["Date", "Booked", "Furthest Stage Reached", "Service", "UTM Source", "attempt", "recovered"] });
   await call("netic_get_scheduler_bookings", { ...range, max_rows: 5, fields: ["session_created_at", "session_status", "session_source", "utm_source"] });
   await call("netic_get_tgl_bookings", { ...range, max_rows: 5, fields: ["booked_at", "date", "job_type_name", "service_type", "outcome_type"] });
   await call("netic_get_referrer_bookings", { ...range, max_rows: 5, fields: ["booked_at", "job_type", "status"] });
@@ -76,6 +77,7 @@ try {
   await call("netic_count", { ...range, report: "interactions", aggregate: "sum", modality: "call", group_by: ["category"] }, true);
   await call("netic_count", { ...range, report: "interactions", modality: "call", group_by: ["category", "leadSource"], top: 15 });
   await call("netic_count", { ...range, report: "scheduler_sessions", group_by: ["status", "last_step"] });
+  await call("netic_count", { ...range, report: "scheduler_leads", group_by: ["Furthest Stage Reached", "recovered"] });
   await call("netic_export", { ...range, report: "interactions", modality: "call", filename: `smoke_${tenant}_interactions` });
   await call("netic_export", { ...range, report: "outbound_calls", format: "json", filename: `smoke_${tenant}_outbound` });
   await call("netic_api_call", { tenant, path: "/api/public/metrics/bookings/referrer", params: { createdOnOrAfter: start, createdBefore: end, pageSize: 1 }, max_items: 1 }, false, true);

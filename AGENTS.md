@@ -39,10 +39,12 @@ bearer JWT per tenant. TypeScript, Node, MCP SDK 1.x, bundled by esbuild into
 | `src/dates.ts` | Inclusive-range validation, range splitting |
 | `src/paging.ts` | Auto-paging over the `{data, pagination}` envelope; `walkRange` splits long utilization ranges |
 | `src/utilization.ts` | Board cell text, % booked formula, name filter, footer notes |
+| `src/leads.ts` | Online scheduler leads: inclusion rule, export columns, repeat and follow-up flags, summary |
+| `src/tools/leads.ts` | `netic_get_scheduler_leads` and `collectLeads`, shared with count and export |
 | `src/rows.ts`, `src/aggregate.ts` | `where` filter, column choice, grouped counts, utilization sums |
 | `src/csv.ts` | Streaming CSV and JSON export spool |
 | `src/format.ts` | Markdown tables, the result footer, error text |
-| `src/tools/*.ts` | tenants, reports (incl. utilization), aggregate (count and sum), export, raw |
+| `src/tools/*.ts` | tenants, reports (incl. utilization), leads, aggregate (count and sum), export, raw |
 | `src/schema-compat.ts` | Restamps tool schemas as JSON Schema 2020-12 |
 | `scripts/probe.ts` | Live spec-versus-API checks |
 | `scripts/smoke.ts`, `scripts/handshake.ts`, `scripts/pack.sh` | Live smoke, stdio check, bundle |
@@ -86,6 +88,11 @@ bearer JWT per tenant. TypeScript, Node, MCP SDK 1.x, bundled by esbuild into
   `createdOnOrAfter`), at most 31 inclusive days per request, and optional `snapshotDate` and
   `snapshotTime`. `percentBooked: null` is the board's "No shifts". Group rows already include
   their member units; never add both. Rows carry no customer PII.
+- `scheduler_leads` is derived, not an endpoint: identified scheduler sessions (phone or
+  street address) in the dashboard export's columns, plus follow-up flags from later sessions
+  and inbound interactions. It is not in `REPORTS`, so probe, raw, and `rawGet` never see it.
+  The export's Last Known Step is not in the public API. Copied values stay untrimmed to
+  match the export.
 - Tool results must carry their rows in `structuredContent`: when it is present, Claude's
   client shows the model only that, not the text.
 - Scheduler bookings can take ~15 s and then 500 on a cold call; the client retries that one

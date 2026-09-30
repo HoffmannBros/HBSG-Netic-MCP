@@ -2,8 +2,8 @@
   "manifest_version": "0.4",
   "name": "hbsg-netic",
   "display_name": "Netic (Hoffmann Brothers)",
-  "version": "0.2.0",
-  "description": "Read Netic AI agent and online booking data: inbound interactions, bookings, scheduler sessions, outbound calls, utilization, counts, and exports.",
+  "version": "0.3.0",
+  "description": "Read Netic AI agent and online booking data: inbound interactions, bookings, scheduler sessions and leads, outbound calls, utilization, counts, and exports.",
   "long_description": "Connects Claude to the Netic Reports Export API for Hoffmann Brothers' brands. Ask how many calls the Netic agent booked by lead source, where online scheduler sessions drop off, which technicians turned leads, what outbound CSR calls were about, or how booked each business unit is on the Utilization Board, for any date range. Counts walk every page, and exports write CSV or JSON files of any size. Read-only: the extension never creates leads or changes anything in Netic.\n\nSetup: Netic issues one token per tenant. Fill in a name and token for each tenant you use (the names default to stl, nash, blue, and ferg). Tokens are stored in your OS keychain. Leave unused slots blank.\n\nExports are saved to the export folder you choose (default: Documents/Netic Reports).",
   "author": {
     "name": "Justin Schmidt",
@@ -38,6 +38,7 @@
     { "name": "netic_list_tenants", "description": "List the configured Netic tenant names" },
     { "name": "netic_get_interactions", "description": "Inbound calls, texts, and recapture texts handled by Netic" },
     { "name": "netic_get_scheduler_sessions", "description": "Online scheduler sessions, booked and abandoned" },
+    { "name": "netic_get_scheduler_leads", "description": "Online scheduler leads (the dashboard export) with bounce follow-up flags and a summary" },
     { "name": "netic_get_scheduler_bookings", "description": "Jobs booked through the online scheduler" },
     { "name": "netic_get_tgl_bookings", "description": "Technician turn-the-lead bookings" },
     { "name": "netic_get_referrer_bookings", "description": "Referrer (RGL) bookings" },

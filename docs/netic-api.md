@@ -130,3 +130,35 @@ parity table are in `docs/utilization-ui-findings.md`.
   drift), 31 days 200 and 32 days 400, the snapshot errors, and the created-param refusal.
   Group rows per day: stl 2, nash 4, blue 1, ferg 8. The same run hit the known
   scheduler-bookings 500 on stl and nash, which is unrelated.
+
+### 2026-09-30, online scheduler leads export (blue, 2026-08-30 to 2026-09-30)
+
+The dashboard's "online scheduler leads" CSV compared with `scheduler/sessions` over the same
+range. Counts only; the CSV carries PII and stays out of the repo.
+
+- **Inclusion rule.** The export is the sessions with a non-blank `customer_phone_number` or
+  `street_address`: 807 of 807 rows, none extra, none missing. Anonymous sessions and 3
+  name-only sessions are left out, and so is 1 completed session with no PII, which is why
+  the export shows 524 booked against the API's 525.
+- **Columns.** All 15 shared columns are equal on all 807 rows (`netic_export
+  report=scheduler_leads`, `check_contacts=false`):
+  | Export | API |
+  |---|---|
+  | Tenant | Netic's display name: `Blue Sky`, `STL Hoffmann`, `NASH Hoffmann`, `Ferguson`. Sessions carry no tenant field |
+  | Date | `session_created_at` `YYYY-MM-DD HH:mm:ss` local, as `MM/dd/yyyy HH:mm` |
+  | Name | `customer_name` |
+  | Identified By | `Phone` if the phone is non-blank, else `Address` (790 and 17) |
+  | Phone Number, Street Address, City, State, Zip Code | `customer_phone_number`, `street_address`, `city`, `state`, `zip_code`, untrimmed (two cities end in a space, and the export keeps it) |
+  | Booked | `Yes` when `status` is `completed` |
+  | Furthest Stage Reached | `last_step` as `Schedule (stage 4 of 6)`: issue 1, details 2, customer 3, schedule 4, confirmation 5, booked 6 |
+  | Service | `job_type` |
+  | UTM Source, Medium, Campaign | `utm_source`, `utm_medium`, `utm_campaign` |
+- **Last Known Step is not in the public API.** It differs from Furthest Stage Reached on 38
+  of 807 rows (a customer who clicked Back). The tool leaves it out.
+- stl and nash also have `last_step` = `location`, before the issue step. Those sessions
+  never carry PII, so they never become leads (the smoke run on 2026-09-30 saw stages 3 to 6
+  only). The tool labels it `Location` with no stage number, just in case.
+- **Follow-ups.** Of blue's 283 abandoned leads, 25 had a later completed session from the
+  same phone or address within 7 days, and 99 called or texted Netic within 7 days (median 24
+  minutes after the session; 98 of the first contacts were calls). Three were checked by hand
+  against `netic_get_interactions`: each first contact matched. 76 count as recovered.

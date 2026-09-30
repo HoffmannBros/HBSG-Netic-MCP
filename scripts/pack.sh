@@ -53,7 +53,7 @@ echo "==> Verifying the bundle runs from a clean unpack"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 unzip -q "$OUT" -d "$TMP"
-npx --no-install tsx scripts/handshake.ts "$TMP/server/index.cjs" 11
+npx --no-install tsx scripts/handshake.ts "$TMP/server/index.cjs" 12
 
 SIZE=$(du -h "$OUT" | cut -f1)
 echo "==> OK: $OUT ($SIZE)"
