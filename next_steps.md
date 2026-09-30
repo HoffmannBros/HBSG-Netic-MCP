@@ -2,8 +2,8 @@
 
 Handoff state for HBSG-Netic-MCP.
 
-**Last updated:** 2026-09-30 (v0.3.0 released: online scheduler leads, verified live; not yet
-installed in Claude Desktop)
+**Last updated:** 2026-09-30 (v0.3.0 released: online scheduler leads, verified live, installed
+in Claude Desktop and working)
 
 ## Goal
 
@@ -15,7 +15,7 @@ blue, ferg). TypeScript on Node, bundled to one file with esbuild, mirroring
 Plans: `~/.claude/plans/we-re-going-to-build-abstract-pike.md` (v0.1.0) and
 `~/.claude/plans/pasted-content-id-2a3f-add-support-wiggly-bunny.md` (v0.2.0 utilization and
 inline rows; done), `~/.claude/plans/c-users-justin-schmidt-downloads-online-foamy-squid.md`
-(v0.3.0 online scheduler leads; released, install pending).
+(v0.3.0 online scheduler leads; done).
 
 ## Where things stand
 
@@ -34,20 +34,18 @@ inline rows; done), `~/.claude/plans/c-users-justin-schmidt-downloads-online-foa
 | `npm run smoke`, all four tenants | **passed** 2026-09-30 (ferg's 45-day utilization call got one Netic 500 at 15 s; the rerun passed) |
 | `npm run pack` | passes; `dist/hbsg-netic-0.3.0.mcpb` |
 | Install the .mcpb in Claude Desktop and try it | done 2026-09-29: installed over v0.1.0, works, rows inline |
+| Install v0.3.0 in Claude Desktop | done 2026-09-30: installed over v0.2.0, both test questions answered correctly |
 | Tag and GitHub Release | done: `v0.3.0` 2026-09-30 (`v0.2.0` before it; v0.1.0 was never released) |
 
 ## Next actions, in order
 
-1. Install `dist/hbsg-netic-0.3.0.mcpb` in Claude Desktop and ask "who bounced off the Blue
-   Sky online scheduler yesterday and hasn't come back?" and "bounces by Service and UTM
-   source this month".
-2. Share the release with the team:
+1. Share the release with the team:
    https://github.com/HoffmannBros/HBSG-Netic-MCP/releases/tag/v0.3.0 (v0.2.0 was never
    announced either).
-3. Build the Cowork daily bounced digest on top of `netic_get_scheduler_leads` (`booked=no,
+2. Build the Cowork daily bounced digest on top of `netic_get_scheduler_leads` (`booked=no,
    exclude_recovered=true, start=end=yesterday`).
-4. Raise the scheduler-bookings timeouts with Netic (see "Verified facts").
-5. Anything from "Ideas not built" only when someone asks for it.
+3. Raise the scheduler-bookings timeouts with Netic (see "Verified facts").
+4. Anything from "Ideas not built" only when someone asks for it.
 
 ## Verified facts (live 2026-09-25 unless noted)
 
