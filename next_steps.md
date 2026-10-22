@@ -2,8 +2,8 @@
 
 Handoff state for HBSG-Netic-MCP.
 
-**Last updated:** 2026-10-22 (v0.4.0 committed and installed: inbound call transcripts from
-the Calls Drill Down CSV, verified live on nash; not yet tagged or released)
+**Last updated:** 2026-10-22 (v0.4.0 installed and released: inbound call transcripts from
+the Calls Drill Down CSV, verified live on nash)
 
 ## Goal
 
@@ -38,18 +38,18 @@ inline rows; done), `~/.claude/plans/c-users-justin-schmidt-downloads-online-foa
 | Install the .mcpb in Claude Desktop and try it | done 2026-09-29: installed over v0.1.0, works, rows inline |
 | Install v0.3.0 in Claude Desktop | done 2026-09-30: installed over v0.2.0, both test questions answered correctly |
 | Install v0.4.0 in Claude Desktop | done before 2026-10-22 (date not recorded): the transcript tools show up in the connector |
-| Tag and GitHub Release | done: `v0.3.0` 2026-09-30 (`v0.2.0` before it; v0.1.0 was never released) |
+| Tag and GitHub Release | done: `v0.4.0` 2026-10-22 (`v0.3.0` 2026-09-30, `v0.2.0` before it; v0.1.0 was never released) |
 
 ## Next actions, in order
 
 1. Try v0.4.0 in Claude Desktop: "classify last week's NASH escalations by what the caller
-   wanted" (needs a NASH Calls Drill Down CSV in Downloads). Then tag and release v0.4.0.
+   wanted" (needs a NASH Calls Drill Down CSV in Downloads).
 2. Send Netic the asks in `docs/netic-requests.md` (transcripts in the API, interaction id in
    the CSVs, text conversations, scheduler-bookings timeouts). When they ship transcripts,
    `npm run probe` shows it under `transcriptKeys` and the tools switch to the API on their own.
 3. Share the release with the team:
-   https://github.com/HoffmannBros/HBSG-Netic-MCP/releases/tag/v0.3.0 (v0.2.0 was never
-   announced either).
+   https://github.com/HoffmannBros/HBSG-Netic-MCP/releases/tag/v0.4.0 (v0.2.0 and v0.3.0
+   were never announced either).
 4. Build the Cowork daily bounced digest on top of `netic_get_scheduler_leads` (`booked=no,
    exclude_recovered=true, start=end=yesterday`).
 5. Anything from "Ideas not built" only when someone asks for it.
