@@ -1,13 +1,15 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { RowSpool, sanitizeFilename } from "../csv.js";
-import type { Row } from "../client.js";
+import { NeticRequestError, type Row } from "../client.js";
 import type { AppContext } from "../context.js";
 import { REPORT_INFO, TRANSCRIPT_COLUMNS } from "../endpoints.js";
 import { footer, formatBytes, markdownTable, textResult } from "../format.js";
 import { rangeNotes, walkRange } from "../paging.js";
 import { dropColumns, project, wherePredicate } from "../rows.js";
 import { utilizationNotes } from "../utilization.js";
+import { TRANSCRIPT_FIELDS, joinNotes } from "../transcripts.js";
+import { csvPathArg, withTranscripts } from "./transcripts.js";
 import { LEADS_LABEL, LEADS_REPORT, checkContactsArg, collectLeads, repeatWindowArg, type FollowUpInfo } from "./leads.js";
 import {
   READ_ONLY,
@@ -51,6 +53,13 @@ export function registerExportTools(server: McpServer, ctx: AppContext): void {
         check_contacts: checkContactsArg.describe("scheduler_leads only: " + (checkContactsArg.description ?? "")),
         repeat_window_days: repeatWindowArg.describe("scheduler_leads only: " + (repeatWindowArg.description ?? "")),
         include_transcript: z.boolean().default(true).describe("Outbound calls only: write the transcript and analysis columns. Default true, since they go to a file."),
+        include_transcripts: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Interactions with modality=call only: add the inbound AI call transcript and transcriptChars, agentTurns, userTurns, firstUserLine, joined from the dashboard's Calls Drill Down CSV (the API has no transcripts yet). Default false.",
+          ),
+        csv_path: csvPathArg.describe("With include_transcripts: " + (csvPathArg.description ?? "")),
         max_rows: z.number().int().min(1).max(2_000_000).default(1_000_000).describe("Safety cap on rows written. Default 1000000."),
         filename: filenameArg,
         output_dir: outputDirArg,
@@ -63,6 +72,10 @@ export function registerExportTools(server: McpServer, ctx: AppContext): void {
       const dir = resolveOutputDir(ctx, args.output_dir);
       const spool = await RowSpool.create({ dir, initialColumns: args.fields ?? [] });
       const dropTranscripts = args.report === "outbound_calls" && !args.include_transcript;
+      const joinTranscripts = args.include_transcripts === true;
+      if (joinTranscripts && !(args.report === "interactions" && args.modality === "call")) {
+        throw new NeticRequestError("include_transcripts works only with report=interactions and modality=call.");
+      }
       const preview: Array<Record<string, unknown>> = [];
       const write = async (rows: Row[]) => {
         for (const raw of rows) {
@@ -95,12 +108,18 @@ export function registerExportTools(server: McpServer, ctx: AppContext): void {
             pageSize: 5000,
             maxRows: args.max_rows,
             filter: wherePredicate(args.where),
-            onRows: write,
+            onRows: joinTranscripts ? undefined : write,
           });
+          let joinedNotes: string[] = [];
+          if (joinTranscripts) {
+            const joined = await withTranscripts(ctx, client, walked.rows, args.csv_path);
+            await write(joined.rows.map((r) => ({ ...r, ...Object.fromEntries(TRANSCRIPT_FIELDS.map((f) => [f, r[f] ?? ""])) })));
+            joinedNotes = joinNotes(joined.stats);
+          }
           result = walked;
           label = info.label;
           apiCalls = client.requestCount - before;
-          notes = [...(args.report === "utilization" ? utilizationNotes(walked.extras) : []), ...rangeNotes(walked, info.maxRangeDays)];
+          notes = [...(args.report === "utilization" ? utilizationNotes(walked.extras) : []), ...rangeNotes(walked, info.maxRangeDays), ...joinedNotes];
         }
       } catch (err) {
         await spool.discard();
@@ -110,7 +129,7 @@ export function registerExportTools(server: McpServer, ctx: AppContext): void {
         args.filename ??
         `netic_${client.tenant}_${args.report}${args.modality ? `_${args.modality}` : ""}_${args.start}_${args.end}`;
       const out = await spool.finalize(withExtension(sanitizeFilename(name), args.format), { format: args.format, bom: args.bom });
-      const previewColumns = out.columns.filter((c) => !(TRANSCRIPT_COLUMNS as readonly string[]).includes(c)).slice(0, 10);
+      const previewColumns = out.columns.filter((c) => !(TRANSCRIPT_COLUMNS as readonly string[]).includes(c) && c !== "firstUserLine").slice(0, 10);
       const text = [
         `Wrote ${out.rows} ${label} row(s) for tenant ${client.tenant} to ${out.path} (${formatBytes(out.bytes)}).`,
         `Columns (${out.columns.length}): ${out.columns.join(", ")}`,

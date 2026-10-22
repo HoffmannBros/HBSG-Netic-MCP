@@ -8,6 +8,7 @@ import { registerLeadTools } from "./tools/leads.js";
 import { registerRawTools } from "./tools/raw.js";
 import { registerReportTools } from "./tools/reports.js";
 import { registerTenantTools } from "./tools/tenants.js";
+import { registerTranscriptTools } from "./tools/transcripts.js";
 import { SERVER_NAME, VERSION } from "./version.js";
 
 const INSTRUCTIONS = `Netic is the AI voice agent, texting, and online booking platform used by Hoffmann Brothers' brands. This server reads its Reports Export API, the same rows as the Netic dashboard CSV exports.
@@ -17,6 +18,7 @@ For "how many" questions use netic_count, which walks every page and groups by u
 netic_get_utilization is the Netic Utilization Board: % booked (job hours / available hours) per business unit and group per day. null means "No shifts", over 100% is overbooked, and a group row already includes its member units. Live by default; snapshot_date is the board's Point in time. For % booked over several days use netic_count with report=utilization and aggregate=sum, never an average of daily percentages.
 netic_get_scheduler_leads is the dashboard's "online scheduler leads" export: scheduler sessions where the customer gave a phone or address, booked or not. Bounced means booked=no; for who still needs a call add exclude_recovered=true, which drops leads that booked online later or got a job through a later Netic call or text. netic_count and netic_export take report=scheduler_leads for breakdowns and full files. Follow-up contacts are checked by default; each result's followUp block says what was checked and gives a caveat (phone matches only, a window of repeat_window_days, possibly still open). Pass it on when it affects the answer or the user asks how "recovered" works.
 Interactions need modality (call, inbound_text, recapture_text). Booking columns vary by provider (ServiceTitan, Cargas, or session-based). Outbound call transcripts are omitted inline unless include_transcript=true.
+Inbound AI call transcripts (what callers and the Netic agent said) are not in the API yet; the transcript tools read them from the dashboard's Calls Drill Down CSV export (Analytics, Drill Down, Calls, export; newest drilldown_export*.csv in Downloads by default) and join it to the API rows. Use netic_search_call_transcripts to count and find calls by what was said, netic_get_call_transcripts to read or classify calls in batches (follow next_offset; never try to load a whole month at once), and netic_export report=interactions modality=call include_transcripts=true for a file. If no CSV is found, tell the user how to export it. The footer says which file was used and which calls it does not cover.
 Rows contain customer names, phones, and addresses; do not repeat them beyond what the user asked for.`;
 
 export function buildServer(env: NodeJS.ProcessEnv = process.env): McpServer {
@@ -26,6 +28,7 @@ export function buildServer(env: NodeJS.ProcessEnv = process.env): McpServer {
   registerReportTools(server, ctx);
   registerLeadTools(server, ctx);
   registerAggregateTools(server, ctx);
+  registerTranscriptTools(server, ctx);
   registerExportTools(server, ctx);
   registerRawTools(server, ctx);
   for (const warning of ctx.config.warnings) console.error(`[hbsg-netic] ${warning}`);

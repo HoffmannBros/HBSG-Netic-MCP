@@ -2,8 +2,8 @@
 
 Handoff state for HBSG-Netic-MCP.
 
-**Last updated:** 2026-09-30 (v0.3.0 released: online scheduler leads, verified live, installed
-in Claude Desktop and working)
+**Last updated:** 2026-10-22 (v0.4.0 committed and installed: inbound call transcripts from
+the Calls Drill Down CSV, verified live on nash; not yet tagged or released)
 
 ## Goal
 
@@ -15,7 +15,8 @@ blue, ferg). TypeScript on Node, bundled to one file with esbuild, mirroring
 Plans: `~/.claude/plans/we-re-going-to-build-abstract-pike.md` (v0.1.0) and
 `~/.claude/plans/pasted-content-id-2a3f-add-support-wiggly-bunny.md` (v0.2.0 utilization and
 inline rows; done), `~/.claude/plans/c-users-justin-schmidt-downloads-online-foamy-squid.md`
-(v0.3.0 online scheduler leads; done).
+(v0.3.0 online scheduler leads; done), `~/.claude/plans/in-a-previous-cowork-jazzy-meerkat.md`
+(v0.4.0 inbound call transcripts; done).
 
 ## Where things stand
 
@@ -23,8 +24,9 @@ inline rows; done), `~/.claude/plans/c-users-justin-schmidt-downloads-online-foa
 |---|---|
 | Repo, scaffold, remote `HoffmannBros/HBSG-Netic-MCP` | done, pushed to `main` |
 | Tenant config loader, GET-only client (web/leads blocked) | done |
-| 12 read-only tools, server entry, schema compat | done (v0.2.0 added `netic_get_utilization`, v0.3.0 `netic_get_scheduler_leads`) |
-| Tests (`npm test`) | 134 pass: unit, stdio handshake, every tool against a local fake API |
+| 14 read-only tools, server entry, schema compat | done (v0.2.0 added `netic_get_utilization`, v0.3.0 `netic_get_scheduler_leads`, v0.4.0 `netic_search_call_transcripts` and `netic_get_call_transcripts`) |
+| Tests (`npm test`) | 156 pass: unit, stdio handshake, every tool against a local fake API |
+| Inbound call transcripts (v0.4.0): search, batched get, `netic_export include_transcripts` | built 2026-09-30; nash 8/30 to 9/30 joined 3,875 of 3,875 CSV transcripts to 4,034 API calls, 0 ambiguous. Smoke passes on nash (CSV present) and stl (no CSV, clear error) |
 | Online scheduler leads: tool, `report=scheduler_leads` in count and export | done 2026-09-30; 807 of 807 rows and all 15 columns match the dashboard CSV (blue, 8/30 to 9/30) |
 | Rows missing from tool results (only `structuredContent` reaches the model) | fixed in v0.2.0: rows now in `structuredContent` for get, api_call, and export preview |
 | Utilization: tool, `netic_count aggregate=sum`, export, api_call docs | done; 70 of 70 UI cells match (`docs/utilization-ui-findings.md`) |
@@ -32,23 +34,32 @@ inline rows; done), `~/.claude/plans/c-users-justin-schmidt-downloads-online-foa
 | `npm run probe`, all four tenants | done 2026-09-25; findings in `docs/netic-api.md` |
 | Drift fixes from the probe | done: default columns, scheduler-bookings 500 retry and hint |
 | `npm run smoke`, all four tenants | **passed** 2026-09-30 (ferg's 45-day utilization call got one Netic 500 at 15 s; the rerun passed) |
-| `npm run pack` | passes; `dist/hbsg-netic-0.3.0.mcpb` |
+| `npm run pack` | passes; `dist/hbsg-netic-0.4.0.mcpb` |
 | Install the .mcpb in Claude Desktop and try it | done 2026-09-29: installed over v0.1.0, works, rows inline |
 | Install v0.3.0 in Claude Desktop | done 2026-09-30: installed over v0.2.0, both test questions answered correctly |
+| Install v0.4.0 in Claude Desktop | done before 2026-10-22 (date not recorded): the transcript tools show up in the connector |
 | Tag and GitHub Release | done: `v0.3.0` 2026-09-30 (`v0.2.0` before it; v0.1.0 was never released) |
 
 ## Next actions, in order
 
-1. Share the release with the team:
+1. Try v0.4.0 in Claude Desktop: "classify last week's NASH escalations by what the caller
+   wanted" (needs a NASH Calls Drill Down CSV in Downloads). Then tag and release v0.4.0.
+2. Send Netic the asks in `docs/netic-requests.md` (transcripts in the API, interaction id in
+   the CSVs, text conversations, scheduler-bookings timeouts). When they ship transcripts,
+   `npm run probe` shows it under `transcriptKeys` and the tools switch to the API on their own.
+3. Share the release with the team:
    https://github.com/HoffmannBros/HBSG-Netic-MCP/releases/tag/v0.3.0 (v0.2.0 was never
    announced either).
-2. Build the Cowork daily bounced digest on top of `netic_get_scheduler_leads` (`booked=no,
+4. Build the Cowork daily bounced digest on top of `netic_get_scheduler_leads` (`booked=no,
    exclude_recovered=true, start=end=yesterday`).
-3. Raise the scheduler-bookings timeouts with Netic (see "Verified facts").
-4. Anything from "Ideas not built" only when someone asks for it.
+5. Anything from "Ideas not built" only when someone asks for it.
 
 ## Verified facts (live 2026-09-25 unless noted)
 
+- Inbound AI call transcripts (2026-09-30): not in the public API under any param or path;
+  only the dashboard Calls Drill Down CSV has them (`AI Call Transcript`). The texts export has
+  none. The CSV has no interaction id; phone plus minute, then ServiceTitan call id, then total
+  duration joins it exactly. Details in `docs/netic-api.md`.
 - Both date bounds are inclusive; single-day totals sum exactly to the week on all tenants.
 - No maximum date range: 731 days returns 200. Latency grows with range (stl interactions
   at pageSize 1: 31 d 4 s, 92 d 20 s, 366 d 61 s). So no range chunking was built.

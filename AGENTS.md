@@ -5,7 +5,8 @@
 Claude Desktop extension (.mcpb) for the Netic Reports Export API: the read-only,
 tenant-scoped JSON version of the Netic dashboard CSV exports (inbound interactions, TGL,
 scheduler and referrer bookings, scheduler sessions, outbound CSR call transcripts), plus the
-Utilization Board. One
+Utilization Board and inbound AI call transcripts joined from the dashboard's Calls Drill Down
+CSV. One
 bearer JWT per tenant. TypeScript, Node, MCP SDK 1.x, bundled by esbuild into
 `server/index.cjs` with no shipped node_modules.
 
@@ -40,11 +41,13 @@ bearer JWT per tenant. TypeScript, Node, MCP SDK 1.x, bundled by esbuild into
 | `src/paging.ts` | Auto-paging over the `{data, pagination}` envelope; `walkRange` splits long utilization ranges |
 | `src/utilization.ts` | Board cell text, % booked formula, name filter, footer notes |
 | `src/leads.ts` | Online scheduler leads: inclusion rule, export columns, repeat and follow-up flags, summary |
+| `src/transcripts.ts` | Calls Drill Down CSV: parse, find the newest per tenant, join to interactions, search, snippets, batching |
+| `src/tools/transcripts.ts` | `netic_search_call_transcripts`, `netic_get_call_transcripts`, and `withTranscripts`, shared with export |
 | `src/tools/leads.ts` | `netic_get_scheduler_leads` and `collectLeads`, shared with count and export |
 | `src/rows.ts`, `src/aggregate.ts` | `where` filter, column choice, grouped counts, utilization sums |
 | `src/csv.ts` | Streaming CSV and JSON export spool |
 | `src/format.ts` | Markdown tables, the result footer, error text |
-| `src/tools/*.ts` | tenants, reports (incl. utilization), leads, aggregate (count and sum), export, raw |
+| `src/tools/*.ts` | tenants, reports (incl. utilization), leads, transcripts, aggregate (count and sum), export, raw |
 | `src/schema-compat.ts` | Restamps tool schemas as JSON Schema 2020-12 |
 | `scripts/probe.ts` | Live spec-versus-API checks |
 | `scripts/smoke.ts`, `scripts/handshake.ts`, `scripts/pack.sh` | Live smoke, stdio check, bundle |
@@ -93,6 +96,14 @@ bearer JWT per tenant. TypeScript, Node, MCP SDK 1.x, bundled by esbuild into
   and inbound interactions. It is not in `REPORTS`, so probe, raw, and `rawGet` never see it.
   The export's Last Known Step is not in the public API. Copied values stay untrimmed to
   match the export.
+- Inbound AI call transcripts are not in the public API (probed 2026-09-30). They come from the
+  dashboard's Calls Drill Down CSV (`AI Call Transcript` column), found as the newest
+  `drilldown_export*.csv` for the tenant in `NETIC_TRANSCRIPT_DIR` (default Downloads). The
+  texts export has the same file name and no transcript. The CSV has no interaction id, so the
+  join is phone plus minute, then ServiceTitan call id, then total duration. A CSV whose Tenant
+  differs from the API rows' `tenant` is refused. If the API ever sends `aiCallTranscript`,
+  `transcript`, or `callTranscript`, that wins and no CSV is read. A month of one tenant is
+  over a million tokens, so the tools search and batch server-side; never return them all.
 - Tool results must carry their rows in `structuredContent`: when it is present, Claude's
   client shows the model only that, not the text.
 - Scheduler bookings can take ~15 s and then 500 on a cold call; the client retries that one

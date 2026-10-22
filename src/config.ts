@@ -13,6 +13,8 @@ export interface Config {
   tenants: Map<string, TenantConfig>;
   baseUrl: string;
   outputDir: string;
+  /** Where the transcript tools look for Calls Drill Down CSVs. */
+  transcriptDir: string;
   timeoutMs: number;
   /** Problems found while loading, for stderr. Never contains a token. */
   warnings: string[];
@@ -20,6 +22,7 @@ export interface Config {
 
 export const DEFAULT_BASE_URL = "https://app.netic.ai";
 export const DEFAULT_OUTPUT_DIR = "${DOCUMENTS}/Netic Reports";
+export const DEFAULT_TRANSCRIPT_DIR = "${DOWNLOADS}";
 /** The manifest exposes this many fixed tenant slots. */
 export const SLOT_COUNT = 4;
 
@@ -121,6 +124,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, home: string = 
     tenants,
     baseUrl: (blankToUndefined(env.NETIC_BASE_URL) ?? DEFAULT_BASE_URL).replace(/\/+$/, ""),
     outputDir: expandPathTokens(blankToUndefined(env.NETIC_OUTPUT_DIR) ?? DEFAULT_OUTPUT_DIR, home),
+    transcriptDir: expandPathTokens(blankToUndefined(env.NETIC_TRANSCRIPT_DIR) ?? DEFAULT_TRANSCRIPT_DIR, home),
     timeoutMs: positiveInt(env.NETIC_TIMEOUT_MS, 120_000),
     warnings,
   };

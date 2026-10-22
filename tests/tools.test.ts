@@ -52,8 +52,31 @@ function sessionRows(): Array<Record<string, unknown>> {
   ];
 }
 
-function rowsFor(pathname: string): Array<Record<string, unknown>> {
+/** Inbound calls on 2026-09-10, matched by the transcript fixture below. i1 and i2 share phone and minute. */
+function transcriptCallRows(): Array<Record<string, unknown>> {
+  const base = { tenant: "Hoffmann STL", trade: "HVAC", reason: "r", subReason: "s" };
+  return [
+    { ...base, id: "i0", phoneNumber: "+15555550101", date: "09/10/2026 08:00", category: "Booked", serviceTitanCallId: "9001", callDurationTotal: "1:00" },
+    { ...base, id: "i1", phoneNumber: "+15555550102", date: "09/10/2026 09:00", category: "Handled", serviceTitanCallId: "9002", callDurationTotal: "2:00" },
+    { ...base, id: "i2", phoneNumber: "+15555550102", date: "09/10/2026 09:00", category: "Transferred", serviceTitanCallId: "9003", callDurationTotal: "0:30" },
+    { ...base, id: "i3", phoneNumber: "+15555550104", date: "09/10/2026 10:00", category: "Handled", serviceTitanCallId: "9004", callDurationTotal: "0:05" },
+    { ...base, id: "i4", phoneNumber: "+15555550105", date: "09/10/2026 11:00", category: "Handled", serviceTitanCallId: "9005", callDurationTotal: "1:00" },
+  ];
+}
+
+/** A synthetic Calls Drill Down export: quoted multi-line transcripts, a blank one, and no row for i4. */
+const TRANSCRIPT_CSV = [
+  "﻿Tenant,Phone Number,Date,Category,Total Call Duration,ServiceTitan Call ID,AI Call Transcript",
+  'Hoffmann STL,+15555550101,09/10/2026 08:00,Booked,1:00,9001,"Agent: Thanks for calling.\nUser: My AC is not cooling, and I want a membership.\nAgent: I can book that."',
+  'Hoffmann STL,+15555550102,09/10/2026 09:00,Handled,2:00,9002,"Agent: Hello.\nUser: I need to reschedule my appointment."',
+  'Hoffmann STL,+15555550102,09/10/2026 09:00,Transferred,0:30,9003,"Agent: Hello.\nUser: Can I talk to a person about billing?\nAgent: Transferring you."',
+  "Hoffmann STL,+15555550104,09/10/2026 10:00,Handled,0:05,9004,",
+  "",
+].join("\r\n");
+
+function rowsFor(pathname: string, url?: URL): Array<Record<string, unknown>> {
   if (pathname.endsWith("/scheduler/sessions")) return sessionRows();
+  if (pathname.endsWith("/interactions") && url?.searchParams.get("createdOnOrAfter") === "2026-09-10") return transcriptCallRows();
   if (pathname.endsWith("/interactions")) {
     return Array.from({ length: 1234 }, (_, i) => ({
       id: `i${i}`,
@@ -75,6 +98,7 @@ function rowsFor(pathname: string): Array<Record<string, unknown>> {
 let server: http.Server;
 let client: Client;
 let outDir: string;
+let transcriptDir: string;
 
 beforeAll(async () => {
   if (!fs.existsSync(bundle)) throw new Error(`Build first: ${bundle} is missing (npm run build).`);
@@ -82,7 +106,7 @@ beforeAll(async () => {
     const url = new URL(req.url ?? "/", "http://localhost");
     seen.push({ method: req.method ?? "", url, auth: req.headers.authorization });
     const utilization = url.pathname.endsWith("/utilization");
-    const all = utilization ? utilizationRows(url) : rowsFor(url.pathname);
+    const all = utilization ? utilizationRows(url) : rowsFor(url.pathname, url);
     const page = Number(url.searchParams.get("page") ?? 1);
     const pageSize = Number(url.searchParams.get("pageSize") ?? 100);
     const data = all.slice((page - 1) * pageSize, page * pageSize);
@@ -96,6 +120,9 @@ beforeAll(async () => {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
   outDir = await fsp.mkdtemp(path.join(os.tmpdir(), "netic-tools-"));
+  transcriptDir = await fsp.mkdtemp(path.join(os.tmpdir(), "netic-transcripts-"));
+  await fsp.writeFile(path.join(transcriptDir, "drilldown_export_2026-09-10.csv"), TRANSCRIPT_CSV);
+  await fsp.writeFile(path.join(transcriptDir, "drilldown_export_2026-09-11.csv"), "Tenant,Phone Number,Date\r\nHoffmann STL,+1,09/10/2026 08:00\r\n");
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [bundle],
@@ -106,6 +133,7 @@ beforeAll(async () => {
       NETIC_TENANTS: "stl",
       NETIC_TENANT_STL_TOKEN: "fake-stl-token",
       NETIC_OUTPUT_DIR: outDir,
+      NETIC_TRANSCRIPT_DIR: transcriptDir,
     },
     cwd: root,
     stderr: "pipe",
@@ -118,6 +146,7 @@ afterAll(async () => {
   await client?.close();
   await new Promise<void>((resolve) => server?.close(() => resolve()));
   if (outDir) await fsp.rm(outDir, { recursive: true, force: true });
+  if (transcriptDir) await fsp.rm(transcriptDir, { recursive: true, force: true });
 });
 
 type ToolResult = Awaited<ReturnType<Client["callTool"]>>;
@@ -372,5 +401,90 @@ describe("tools against a fake Netic API", () => {
     });
     expect(result.isError).toBe(true);
     expect(textOf(result)).toMatch(/applies only to report=utilization/);
+  });
+
+  describe("inbound call transcripts from the Calls Drill Down CSV", () => {
+    const day = { start: "2026-09-10", end: "2026-09-10" };
+
+    it("searches what the caller said and counts matches by column", async () => {
+      const result = await client.callTool({
+        name: "netic_search_call_transcripts",
+        arguments: { tenant: "stl", query: "membership", speaker: "user", group_by: ["category"], ...day },
+      });
+      expect(result.isError).toBeFalsy();
+      const s = result.structuredContent as {
+        matched: number;
+        searched: number;
+        groups: Array<{ values: string[]; count: number }>;
+        results: Array<{ id: string; snippets: string[] }>;
+        notes: string[];
+      };
+      expect(s.matched).toBe(1);
+      expect(s.searched).toBe(3);
+      expect(s.groups).toEqual([{ values: ["Booked"], count: 1 }]);
+      expect(s.results[0]?.id).toBe("i0");
+      expect(s.results[0]?.snippets[0]).toMatch(/^User: .*membership/);
+      expect(s.notes.join(" ")).toMatch(/drilldown_export_2026-09-10\.csv .* on 3 of 5 call\(s\)/);
+      expect(s.notes.join(" ")).toMatch(/1 matched with a blank transcript, 1 not in the CSV/);
+    });
+
+    it("keeps calls that share a phone and minute apart by ServiceTitan call id", async () => {
+      const result = await client.callTool({ name: "netic_search_call_transcripts", arguments: { tenant: "stl", query: "billing", ...day } });
+      const s = result.structuredContent as { results: Array<{ id: string; category: string }> };
+      expect(s.results.map((r) => [r.id, r.category])).toEqual([["i2", "Transferred"]]);
+    });
+
+    it("does not match the agent's words when speaker=user", async () => {
+      const result = await client.callTool({ name: "netic_search_call_transcripts", arguments: { tenant: "stl", query: "transferring", speaker: "user", ...day } });
+      expect((result.structuredContent as { matched: number }).matched).toBe(0);
+    });
+
+    it("returns transcripts in budgeted batches with next_offset", async () => {
+      const first = await client.callTool({ name: "netic_get_call_transcripts", arguments: { tenant: "stl", max_total_chars: 1000, max_chars_per_call: 200, limit: 2, ...day } });
+      expect(first.isError).toBeFalsy();
+      const a = first.structuredContent as { selected: number; next_offset: number | null; calls: Array<{ id: string }> };
+      expect(a.selected).toBe(3);
+      expect(a.calls.map((c) => c.id)).toEqual(["i0", "i1"]);
+      expect(a.next_offset).toBe(2);
+      const second = await client.callTool({ name: "netic_get_call_transcripts", arguments: { tenant: "stl", offset: 2, limit: 2, ...day } });
+      const b = second.structuredContent as { calls: Array<{ id: string }>; next_offset: number | null };
+      expect(b.calls.map((c) => c.id)).toEqual(["i2"]);
+      expect(b.next_offset).toBeNull();
+    });
+
+    it("picks calls by ServiceTitan call id", async () => {
+      const result = await client.callTool({ name: "netic_get_call_transcripts", arguments: { tenant: "stl", ids: ["9002"], ...day } });
+      const s = result.structuredContent as { calls: Array<{ id: string; transcript: string }> };
+      expect(s.calls.map((c) => c.id)).toEqual(["i1"]);
+      expect(s.calls[0]?.transcript).toContain("reschedule");
+    });
+
+    it("exports interactions with the transcript columns", async () => {
+      const result = await client.callTool({
+        name: "netic_export",
+        arguments: { tenant: "stl", report: "interactions", modality: "call", include_transcripts: true, format: "json", ...day },
+      });
+      expect(result.isError).toBeFalsy();
+      const s = result.structuredContent as { path: string; rows: number; columns: string[] };
+      expect(s.rows).toBe(5);
+      expect(s.columns).toEqual(expect.arrayContaining(["transcript", "transcriptChars", "agentTurns", "userTurns", "firstUserLine"]));
+      const rows = JSON.parse(await fsp.readFile(s.path, "utf8")) as Array<Record<string, unknown>>;
+      expect(rows.find((r) => r.id === "i2")?.transcript).toContain("billing");
+      expect(rows.find((r) => r.id === "i4")?.transcript).toBe("");
+    });
+
+    it("refuses include_transcripts outside inbound calls", async () => {
+      const result = await client.callTool({ name: "netic_export", arguments: { tenant: "stl", report: "scheduler_sessions", include_transcripts: true, ...day } });
+      expect(result.isError).toBe(true);
+      expect(textOf(result)).toMatch(/only with report=interactions and modality=call/);
+    });
+
+    it("refuses a CSV for another tenant", async () => {
+      const other = path.join(transcriptDir, "other.csv");
+      await fsp.writeFile(other, TRANSCRIPT_CSV.replaceAll("Hoffmann STL", "Blue Sky"));
+      const result = await client.callTool({ name: "netic_search_call_transcripts", arguments: { tenant: "stl", query: "x", csv_path: other, ...day } });
+      expect(result.isError).toBe(true);
+      expect(textOf(result)).toMatch(/is a Blue Sky export, but tenant stl is Hoffmann STL/);
+    });
   });
 });

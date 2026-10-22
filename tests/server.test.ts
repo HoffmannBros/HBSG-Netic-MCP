@@ -19,6 +19,8 @@ const EXPECTED_TOOLS = [
   "netic_get_referrer_bookings",
   "netic_get_outbound_calls",
   "netic_get_utilization",
+  "netic_search_call_transcripts",
+  "netic_get_call_transcripts",
   "netic_count",
   "netic_export",
   "netic_api_call",
@@ -57,7 +59,7 @@ describe("built server over stdio", () => {
     await bare?.close();
   });
 
-  it("exposes exactly the twelve Netic tools, all read-only", async () => {
+  it("exposes exactly the fourteen Netic tools, all read-only", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...EXPECTED_TOOLS].sort());
     for (const tool of tools) {

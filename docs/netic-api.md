@@ -162,3 +162,32 @@ range. Counts only; the CSV carries PII and stays out of the repo.
   same phone or address within 7 days, and 99 called or texted Netic within 7 days (median 24
   minutes after the session; 98 of the first contacts were calls). Three were checked by hand
   against `netic_get_interactions`: each first contact matched. 76 count as recovered.
+
+### 2026-09-30, inbound call transcripts (stl and nash, GET only)
+
+A Cowork answer said Netic keeps no inbound call transcripts. The Hub UI shows them, so we
+probed. Counts only; transcripts carry PII and stay out of the repo.
+
+- **Not in the public API.** `/interactions?modality=call` rows have no transcript, summary,
+  or recording key (37 keys on stl and nash). These params are ignored and return the same
+  JSON: `format=csv`, `includeTranscript`, `includeTranscripts`, `include_transcript`,
+  `transcript`, `transcripts`, `withTranscript`, `include=transcript`,
+  `includeAiCallTranscript`, `expand=transcript`, `fields=transcript,summary`. These paths are
+  404 (Next.js HTML page): `interactions/{id}`, `interactions/transcripts`, `calls`,
+  `calls/inbound`, `calls/transcripts`, `transcripts`.
+- `calls/outbound` has `summary` and `transcript`, but only for human CSR calls placed from
+  ServiceTitan (stl: 10 in September), never the AI agent's inbound calls.
+- **The Calls Drill Down CSV has them.** Dashboard, Analytics, Drill Down for Calls, export
+  (`drilldown_export_<date>.csv`): 26 columns, the API's call columns under display names plus
+  a last column `AI Call Transcript`. nash 08/30 to 09/30: 4,032 rows (the API had 4,034; the
+  2 extra came after the 15:13 export), 3,875 with a transcript, and all 157 blanks
+  `Handled`. `Agent:` / `User:` turns separated by newlines (221 are a single line), median
+  929 characters, max 9,626, 4.6M characters total (about 1.2M tokens). No redaction tags.
+- The texts Drill Down CSV (same file name) has 20 columns and no transcript.
+- **No interaction id in the CSV.** `ServiceTitan Call ID` is filled on 3,965 rows but repeats
+  (68 values twice or more); phone plus minute repeats 37 times. Joining on `phoneNumber|date`
+  (identical strings in API and CSV), then ServiceTitan call id, then `callDurationTotal`,
+  matched every one of the 3,875 transcripts with 0 ambiguous and 2 unmatched (after the
+  export). The transcript tools use that join (`src/transcripts.ts`).
+- `npm run probe` now records `transcriptKeys` per endpoint, so it will show when the API
+  gains the field.

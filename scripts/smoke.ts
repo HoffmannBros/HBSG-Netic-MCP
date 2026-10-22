@@ -13,8 +13,11 @@ import path from "node:path";
 import { loadConfig } from "../src/config.js";
 import { addDays } from "../src/dates.js";
 import { localDate, neticEnv, root } from "./env.js";
+import { neticTenantName } from "../src/leads.js";
+import { findDrilldownCsv } from "../src/transcripts.js";
 
 const env = neticEnv();
+const transcriptDir = loadConfig(env).transcriptDir;
 const tenants = [...loadConfig(env).tenants.keys()];
 const tenant = process.argv[2]?.toLowerCase() ?? tenants[0];
 if (!tenant || !tenants.includes(tenant)) {
@@ -30,7 +33,7 @@ if (!fs.existsSync(bundle)) {
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: [bundle],
-  env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env, NETIC_OUTPUT_DIR: path.join(root, "smoke-output") },
+  env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env, NETIC_OUTPUT_DIR: path.join(root, "smoke-output"), NETIC_TRANSCRIPT_DIR: transcriptDir },
   stderr: "inherit",
 });
 const client = new Client({ name: "smoke", version: "0.0.0" });
@@ -80,6 +83,10 @@ try {
   await call("netic_count", { ...range, report: "scheduler_leads", group_by: ["Furthest Stage Reached", "recovered"] });
   await call("netic_export", { ...range, report: "interactions", modality: "call", filename: `smoke_${tenant}_interactions` });
   await call("netic_export", { ...range, report: "outbound_calls", format: "json", filename: `smoke_${tenant}_outbound` });
+  // Transcripts need a Calls Drill Down CSV for the tenant; without one the tools must say how to get it.
+  const hasCsv = await findDrilldownCsv(transcriptDir, neticTenantName(tenant)).then(() => true, () => false);
+  await call("netic_search_call_transcripts", { ...range, query: "membership", speaker: "user", group_by: ["category"], max_results: 0 }, !hasCsv, true);
+  await call("netic_get_call_transcripts", { ...range, sample: "random", limit: 1, max_chars_per_call: 300 }, !hasCsv, true);
   await call("netic_api_call", { tenant, path: "/api/public/metrics/bookings/referrer", params: { createdOnOrAfter: start, createdBefore: end, pageSize: 1 }, max_items: 1 }, false, true);
   await call("netic_api_call", { tenant, path: "/api/public/metrics/web/leads" }, true);
   await call("netic_get_referrer_bookings", { tenant: "not-a-tenant", start, end }, true);

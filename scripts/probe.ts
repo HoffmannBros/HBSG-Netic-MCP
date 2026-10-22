@@ -184,6 +184,8 @@ async function probeTenant(t: TenantConfig): Promise<Record<string, unknown>> {
       variant: classify(report, row),
       rowShape: shape(row),
       drift: drift(row, SPEC_KEYS[report](row)),
+      // Inbound call transcripts are only in the dashboard CSV (2026-09-30); this shows when the API gains them.
+      transcriptKeys: Object.keys(row ?? {}).filter((k) => /transcript|recording/i.test(k)),
     };
   }
   summary.endpoints = endpoints;
