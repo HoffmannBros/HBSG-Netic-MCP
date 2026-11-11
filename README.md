@@ -33,6 +33,7 @@ How many STL scheduler sessions were abandoned last month, and at which step?
 Show me yesterday's Nashville inbound texts that didn't book.
 Export all Ferguson call interactions for August to CSV.
 What were the most common outbound call reasons for STL this week?
+Average outbound QA score by CSR for Nashville last week, and which scorecard items score lowest?
 How booked is Blue Sky's HVAC Service group tomorrow, and how full was it at 8 AM yesterday?
 Blue Sky % booked per business unit for last week.
 Who bounced off the Blue Sky online scheduler yesterday and hasn't come back?
@@ -50,9 +51,9 @@ STL online scheduler bounces by Service and UTM source this month.
 | `netic_get_scheduler_bookings` | Jobs booked through the online scheduler, with UTMs and click ids |
 | `netic_get_tgl_bookings` | Technician turn-the-lead bookings |
 | `netic_get_referrer_bookings` | Referrer (RGL) bookings |
-| `netic_get_outbound_calls` | Outbound CSR calls with summaries; transcripts on request |
+| `netic_get_outbound_calls` | Outbound CSR calls with summaries and Netic's QA scorecard (`qa_score`, `qa_is_flagged`, ...); `include_scorecard` adds the scored items; transcripts on request |
 | `netic_get_utilization` | Utilization Board: % booked per business unit and group per day, live or point in time |
-| `netic_count` | Counts across every page, grouped by up to three columns; `aggregate=sum` totals utilization hours and recomputes % booked; `report=scheduler_leads` counts leads by any export column |
+| `netic_count` | Counts across every page, grouped by up to three columns; `aggregate=sum` totals utilization hours and recomputes % booked; `report=scheduler_leads` counts leads by any export column; `aggregate=avg value=qa_score` averages a numeric column (e.g. QA score by CSR); `report=outbound_scorecard_items` rolls up scorecard items |
 | `netic_export` | Every row of a report to a CSV or JSON file |
 | `netic_api_call` | A Netic report path directly, GET only |
 

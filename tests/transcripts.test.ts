@@ -4,7 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { csvLine } from "../src/csv.js";
 import {
+  OUTBOUND_SPEAKERS,
   TranscriptSourceError,
+  apiStats,
   attachTranscripts,
   buildMatcher,
   drilldownFromText,
@@ -146,6 +148,23 @@ describe("search", () => {
     expect(found).toHaveLength(1);
     expect(found[0]).toMatch(/^User: No membership, just/);
     expect(snippets(searchable(t, "any"), m, 40, 1)).toHaveLength(1);
+  });
+
+  it("maps agent and user onto CXR and Customer for outbound CSR calls", () => {
+    const outbound = "Customer: Hello?\nCXR: Hi, this call is recorded. Calling about your furnace tune up.\nCustomer: Sure, book the tune up.";
+    expect(turns(outbound, OUTBOUND_SPEAKERS).map((p) => p.speaker)).toEqual(["Customer", "CXR", "Customer"]);
+    // Inbound labels do not split an outbound transcript, and the default stays inbound.
+    expect(turns(outbound)).toEqual([{ speaker: "", text: outbound }]);
+    const m = buildMatcher('"tune up"', { match: "any", regex: false });
+    const customer = searchable(outbound, "user", OUTBOUND_SPEAKERS);
+    expect(customer.map((p) => p.speaker)).toEqual(["Customer", "Customer"]);
+    expect(snippets(customer, m, 40, 3)).toEqual([expect.stringMatching(/^Customer: .*book the tune up/)]);
+    expect(searchable(outbound, "agent", OUTBOUND_SPEAKERS).map((p) => p.speaker)).toEqual(["CXR"]);
+  });
+
+  it("reports API transcript coverage for outbound calls", () => {
+    expect(apiStats([{ transcript: "Customer: hi" }, { transcript: "" }, {}])).toMatchObject({ source: "api", apiRows: 3, withTranscript: 1, unmatched: 2 });
+    expect(joinNotes(apiStats([{ transcript: "CXR: hi" }]))).toEqual(["transcripts from the API on 1 of 1 call(s)"]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GroupCounter } from "../src/aggregate.js";
+import { GroupAverager, GroupCounter, numericCell } from "../src/aggregate.js";
 import { NeticClient, type Row } from "../src/client.js";
 import { walkPages } from "../src/paging.js";
 
@@ -20,6 +20,45 @@ describe("GroupCounter", () => {
       { values: ["Booked", "yelp"], count: 1 },
       { values: ["Not Booked", "(blank)"], count: 1 },
     ]);
+  });
+});
+
+describe("GroupAverager", () => {
+  it("averages numbers and numeric strings per group, skipping blanks and text", () => {
+    const a = new GroupAverager(["agent_name"], "qa_score");
+    a.addMany([
+      { agent_name: "A", qa_score: 0.5 },
+      { agent_name: "A", qa_score: "1" },
+      { agent_name: "A", qa_score: 0.25 },
+      { agent_name: "A", qa_score: null },
+      { agent_name: "B", qa_score: "" },
+      { agent_name: "B", qa_score: "n/a" },
+      { agent_name: "C", qa_score: 1 / 3 },
+    ]);
+    expect(a.total).toBe(7);
+    expect(a.skipped).toBe(3);
+    expect(a.groups()).toEqual([
+      { values: ["A"], rows: 4, n: 3, avg: 0.583, min: 0.25, max: 1 },
+      { values: ["B"], rows: 2, n: 0, avg: null, min: null, max: null },
+      { values: ["C"], rows: 1, n: 1, avg: 0.333, min: 0.333, max: 0.333 },
+    ]);
+    // Over every value, not an average of group averages.
+    expect(a.overall()).toEqual({ n: 4, avg: 0.521 });
+  });
+
+  it("averages string durations, as outbound calls send them", () => {
+    const a = new GroupAverager(["agent_name"], "call_duration_seconds");
+    a.addMany([
+      { agent_name: "A", call_duration_seconds: "120" },
+      { agent_name: "A", call_duration_seconds: " 60 " },
+    ]);
+    expect(a.groups()[0]).toMatchObject({ n: 2, avg: 90 });
+  });
+});
+
+describe("numericCell", () => {
+  it("reads numbers and numeric strings only", () => {
+    expect([1.5, "2", " 3 ", "", " ", "x", null, undefined, true, Number.NaN, Infinity].map(numericCell)).toEqual([1.5, 2, 3, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
   });
 });
 

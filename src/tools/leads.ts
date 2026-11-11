@@ -19,7 +19,7 @@ import {
   type LeadSummary,
 } from "../leads.js";
 import { walkRange } from "../paging.js";
-import { project, wherePredicate, type Where } from "../rows.js";
+import { columnWarnings, columnsOf, project, wherePredicate, type ColumnSource, type Where } from "../rows.js";
 import { READ_ONLY, endArg, fieldsArg, guarded, reportParams, startArg, tenantArg, whereArg } from "./common.js";
 
 export const LEADS_REPORT = "scheduler_leads";
@@ -62,6 +62,8 @@ export interface LeadCollection {
   apiCalls: number;
   notes: string[];
   followUp: FollowUpInfo;
+  /** Columns of the lead rows in range, before where, for unknown-column warnings. */
+  source: ColumnSource;
 }
 
 /**
@@ -168,6 +170,7 @@ export async function collectLeads(client: NeticClient, args: LeadArgs): Promise
     contactsChecked: checkContacts ? contacts.length : undefined,
     apiCalls: client.requestCount - before,
     notes,
+    source: columnsOf(inRange.map((l) => l.row)),
     followUp: {
       contactsChecked: checkContacts,
       interactionsChecked: checkContacts ? contacts.length : null,
@@ -240,8 +243,9 @@ export function registerLeadTools(server: McpServer, ctx: AppContext): void {
       const c = await collectLeads(client, args);
       const summary = summarize(c.rows);
       const shown = c.rows.slice(0, args.max_rows);
-      const available = c.rows.length > 0 ? Object.keys(c.rows[0]!) : [];
+      const available = c.source.columns();
       const columns = args.fields ?? LEAD_DEFAULT_COLUMNS;
+      const warnings = columnWarnings(c.source, { fields: args.fields, where: args.where });
       const lines = [
         `${LEADS_LABEL} for tenant ${client.tenant}${args.booked !== "all" ? ` (booked=${args.booked})` : ""}${args.exclude_recovered ? ", recovered leads excluded" : ""}.`,
         summaryMarkdown(summary),
@@ -250,6 +254,7 @@ export function registerLeadTools(server: McpServer, ctx: AppContext): void {
       if (!args.fields && shown.length > 0) {
         lines.push(`Showing ${columns.length} of ${available.length} columns. All columns: ${available.join(", ")}. Pass fields to choose.`);
       }
+      for (const w of warnings) lines.push(`Warning: ${w}`);
       const hasMore = c.rows.length > shown.length;
       lines.push(
         footer({
@@ -281,7 +286,10 @@ export function registerLeadTools(server: McpServer, ctx: AppContext): void {
         sessionsScanned: c.scanned,
         followUp: c.followUp,
         columns,
+        availableColumns: available,
         rows: shown.map((r) => project(r, columns)),
+        notes: c.notes,
+        warnings,
         apiCalls: c.apiCalls,
       });
     }),

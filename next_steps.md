@@ -2,8 +2,9 @@
 
 Handoff state for HBSG-Netic-MCP.
 
-**Last updated:** 2026-10-22 (v0.4.0 installed and released: inbound call transcripts from
-the Calls Drill Down CSV, verified live on nash)
+**Last updated:** 2026-11-11 (v0.5.0 built and smoke-tested on stl: visible columns and
+warnings, utilization split on a server error, outbound QA scorecards. Not committed, tagged,
+or installed; v0.4.0 is still the installed release)
 
 ## Goal
 
@@ -25,7 +26,7 @@ inline rows; done), `~/.claude/plans/c-users-justin-schmidt-downloads-online-foa
 | Repo, scaffold, remote `HoffmannBros/HBSG-Netic-MCP` | done, pushed to `main` |
 | Tenant config loader, GET-only client (web/leads blocked) | done |
 | 14 read-only tools, server entry, schema compat | done (v0.2.0 added `netic_get_utilization`, v0.3.0 `netic_get_scheduler_leads`, v0.4.0 `netic_search_call_transcripts` and `netic_get_call_transcripts`) |
-| Tests (`npm test`) | 156 pass: unit, stdio handshake, every tool against a local fake API |
+| Tests (`npm test`) | 208 pass (v0.5.0): unit, stdio handshake, every tool against a local fake API |
 | Inbound call transcripts (v0.4.0): search, batched get, `netic_export include_transcripts` | built 2026-09-30; nash 8/30 to 9/30 joined 3,875 of 3,875 CSV transcripts to 4,034 API calls, 0 ambiguous. Smoke passes on nash (CSV present) and stl (no CSV, clear error) |
 | Online scheduler leads: tool, `report=scheduler_leads` in count and export | done 2026-09-30; 807 of 807 rows and all 15 columns match the dashboard CSV (blue, 8/30 to 9/30) |
 | Rows missing from tool results (only `structuredContent` reaches the model) | fixed in v0.2.0: rows now in `structuredContent` for get, api_call, and export preview |
@@ -34,14 +35,49 @@ inline rows; done), `~/.claude/plans/c-users-justin-schmidt-downloads-online-foa
 | `npm run probe`, all four tenants | done 2026-09-25; findings in `docs/netic-api.md` |
 | Drift fixes from the probe | done: default columns, scheduler-bookings 500 retry and hint |
 | `npm run smoke`, all four tenants | **passed** 2026-09-30 (ferg's 45-day utilization call got one Netic 500 at 15 s; the rerun passed) |
-| `npm run pack` | passes; `dist/hbsg-netic-0.4.0.mcpb` |
+| `npm run pack` | passes; `dist/hbsg-netic-0.5.0.mcpb` (2026-11-11) |
 | Install the .mcpb in Claude Desktop and try it | done 2026-09-29: installed over v0.1.0, works, rows inline |
 | Install v0.3.0 in Claude Desktop | done 2026-09-30: installed over v0.2.0, both test questions answered correctly |
 | Install v0.4.0 in Claude Desktop | done before 2026-10-22 (date not recorded): the transcript tools show up in the connector |
 | Tag and GitHub Release | done: `v0.4.0` 2026-10-22 (`v0.3.0` 2026-09-30, `v0.2.0` before it; v0.1.0 was never released) |
 
+## v0.5.0 (built 2026-11-11, not committed, not installed)
+
+From a probe rerun and a read of 103 past tool calls (live findings: `docs/netic-api.md`,
+2026-11-11). Built by two Opus sub-agents, reviewed here.
+
+- **Model-visible columns and warnings.** Every get tool returns `availableColumns`, and
+  every tool returns `warnings` (unknown `fields`, `where`, `group_by`, or `value` names; the
+  utilization group/unit mix) and `notes` (the footer notes) in `structuredContent`. Before,
+  sessions fetched one row over and over to learn column names, and a wrong name gave blank
+  rows with no error.
+- **Utilization split on a server error.** `walkRange` halves a window that returns 500, 502,
+  or 504 and walks the halves in date order, down to one day, with no row emitted twice. Live:
+  stl 2026-09-10 to 09-23, a 500 since at least 11-05, now returns 322 rows in 3 requests.
+- **Outbound QA scorecards.** `qa_score`, `qa_is_lead`, `qa_is_booked`, `qa_is_flagged`,
+  `qa_is_excused`, `qa_scored_items`, `qa_na_items` on every outbound row;
+  `include_scorecard` adds `qa_items`; `netic_count aggregate=avg value=<column>` for any
+  report; derived report `outbound_scorecard_items` (count and export); the transcript tools
+  take `source=outbound`.
+- Verified: `npm test` 208 pass; `npm run smoke -- stl` passes with new checks for all three.
+  Not run live on nash, blue, or ferg.
+
+Left for later:
+
+- 31-day windows for long interaction ranges (a 366-day request runs 45 to 89 s against the
+  MCP client's 60 s timeout), and a short cache for identical GETs (scheduler bookings, past
+  utilization snapshots).
+- `netic_api_call` with a truncated non-envelope body returns `truncated: true` and no body in
+  `structuredContent`; a warning says so, but a preview key would fix it.
+- `netic_export` has no `include_scorecard`, so its JSON has the flat `qa_*` columns but no
+  `qa_items`.
+- `apiCalls` is a delta of a shared counter, so parallel tool calls inflate it.
+- Network timeouts (status 0) on utilization are not split, only 500, 502, and 504.
+
 ## Next actions, in order
 
+0. Commit v0.5.0, run `npm run smoke` on nash, blue, and ferg, install
+   `dist/hbsg-netic-0.5.0.mcpb` in Claude Desktop, then tag and release.
 1. Try v0.4.0 in Claude Desktop: "classify last week's NASH escalations by what the caller
    wanted" (needs a NASH Calls Drill Down CSV in Downloads).
 2. Send Netic the asks in `docs/netic-requests.md` (transcripts in the API, interaction id in

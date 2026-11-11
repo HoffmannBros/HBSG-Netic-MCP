@@ -97,6 +97,10 @@ function hintFor(status: number, tenant: string, path: string): string {
       if (path === SCHEDULER_BOOKINGS_PATH) {
         return "Netic's scheduler-bookings export runs 9 to 16 seconds per request whatever the range, and Netic returns 500 past about 15 seconds; it was already retried. Try again in a minute, or use scheduler_sessions (booked sessions carry booked_job_id) as a stand-in.";
       }
+      if (path === UTILIZATION_PATH) {
+        // Live 2026-11-05 and 2026-11-11: some multi-day windows 500 every time while each half returns 200.
+        return "Netic's utilization endpoint returns 500 for some multi-day windows even though each shorter part succeeds, and a plain retry gets the same 500. netic_get_utilization, netic_count, and netic_export split such windows in half and retry automatically (not with an explicit page); with netic_api_call or page, halve the date range and retry each half.";
+      }
       return "Netic had a server error. Retry, or use a shorter date range.";
     case 502:
     case 503:

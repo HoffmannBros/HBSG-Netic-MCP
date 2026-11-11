@@ -34,7 +34,89 @@ export class GroupCounter {
   }
 }
 
-export type SumField = (typeof UTILIZATION_SUM_FIELDS)[number];
+/** A number from a cell: numbers, and strings that parse as one. Blanks, booleans, and text are not numbers. */
+export function numericCell(value: unknown): number | undefined {
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value !== "string" || value.trim() === "") return undefined;
+  const n = Number(value.trim());
+  return Number.isFinite(n) ? n : undefined;
+}
+
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
+
+export interface AvgGroup {
+  values: string[];
+  /** Rows in the group. */
+  rows: number;
+  /** Rows with a numeric value, which the average covers. */
+  n: number;
+  /** Rounded to 3 decimals; null when no row had a number. */
+  avg: number | null;
+  min: number | null;
+  max: number | null;
+}
+
+/** Averages one numeric column per group. Rows without a number count in rows and skipped, not in n. */
+export class GroupAverager {
+  private readonly groupsByKey = new Map<string, { values: string[]; rows: number; n: number; sum: number; min: number; max: number }>();
+  total = 0;
+  skipped = 0;
+  private n = 0;
+  private sum = 0;
+
+  constructor(
+    readonly fields: string[],
+    readonly value: string,
+  ) {}
+
+  add(row: Row): void {
+    this.total += 1;
+    const values = this.fields.map((f) => cellKey(row[f]));
+    const key = JSON.stringify(values);
+    let g = this.groupsByKey.get(key);
+    if (!g) {
+      g = { values, rows: 0, n: 0, sum: 0, min: Infinity, max: -Infinity };
+      this.groupsByKey.set(key, g);
+    }
+    g.rows += 1;
+    const v = numericCell(row[this.value]);
+    if (v === undefined) {
+      this.skipped += 1;
+      return;
+    }
+    g.n += 1;
+    g.sum += v;
+    g.min = Math.min(g.min, v);
+    g.max = Math.max(g.max, v);
+    this.n += 1;
+    this.sum += v;
+  }
+
+  addMany(rows: Iterable<Row>): void {
+    for (const row of rows) this.add(row);
+  }
+
+  /** Over every row, not an average of group averages. */
+  overall(): { n: number; avg: number | null } {
+    return { n: this.n, avg: this.n > 0 ? round3(this.sum / this.n) : null };
+  }
+
+  /** Most rows first, like count; ties in field-value order. */
+  groups(): AvgGroup[] {
+    return [...this.groupsByKey.values()]
+      .map((g) => ({
+        values: g.values,
+        rows: g.rows,
+        n: g.n,
+        avg: g.n > 0 ? round3(g.sum / g.n) : null,
+        min: g.n > 0 ? round3(g.min) : null,
+        max: g.n > 0 ? round3(g.max) : null,
+      }))
+      .sort((a, b) => b.rows - a.rows || a.values.join("\u0000").localeCompare(b.values.join("\u0000")));
+  }
+}
+
+export type SumField =(typeof UTILIZATION_SUM_FIELDS)[number];
 
 export interface SumGroup {
   values: string[];

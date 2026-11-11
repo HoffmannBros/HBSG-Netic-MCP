@@ -62,6 +62,20 @@ export function splitRange(start: string, end: string, maxDays: number): Array<{
 }
 
 /**
+ * Halve an inclusive range of two or more days into two inclusive ranges,
+ * the first taking the extra day of an odd count: 14 days is 7 + 7, 31 is 16 + 15.
+ */
+export function halveRange(start: string, end: string): [{ start: string; end: string }, { start: string; end: string }] {
+  const days = inclusiveDays(start, end);
+  if (!(days >= 2)) throw new DateError(`${start} to ${end} is not a range of two or more days, so it cannot be halved.`);
+  const firstEnd = addDays(start, Math.ceil(days / 2) - 1);
+  return [
+    { start, end: firstEnd },
+    { start: addDays(firstEnd, 1), end },
+  ];
+}
+
+/**
  * The latest calendar date it is anywhere on Earth (UTC+14). A snapshot date
  * after this is in the future for every tenant; closer calls are left to the
  * API, which knows the tenant's timezone.

@@ -71,6 +71,19 @@ try {
   await call("netic_get_tgl_bookings", { ...range, max_rows: 5, fields: ["booked_at", "date", "job_type_name", "service_type", "outcome_type"] });
   await call("netic_get_referrer_bookings", { ...range, max_rows: 5, fields: ["booked_at", "job_type", "status"] });
   await call("netic_get_outbound_calls", { ...range, max_rows: 5, fields: ["call_placed_at", "call_type", "call_reason", "call_duration_seconds"] });
+  // Outbound QA scorecards (analysis filled since 2026-11): flat qa_* columns, averages, per-item rollup, search.
+  await call("netic_get_outbound_calls", { ...range, max_rows: 5, fields: ["call_placed_at", "call_duration_seconds", "qa_score", "qa_is_flagged", "qa_scored_items", "qa_na_items"] });
+  await call("netic_count", { ...range, report: "outbound_calls", aggregate: "avg", value: "qa_score", group_by: ["qa_is_flagged"] });
+  await call("netic_count", { ...range, report: "outbound_scorecard_items", aggregate: "avg", value: "score", group_by: ["section", "item"], top: 20 });
+  await call("netic_search_call_transcripts", { tenant, start: end, end, source: "outbound", query: "appointment", speaker: "agent", max_results: 0 }, false, true);
+  // An unknown column must come back as a warning the model can see, not as silent blanks.
+  const unknown = await call("netic_get_tgl_bookings", { ...range, max_rows: 1, fields: ["no_such_column"] });
+  if (Number(unknown.scanned) > 0 && !(Array.isArray(unknown.warnings) && unknown.warnings.length > 0)) {
+    failures += 1;
+    console.log("UNEXPECTED: no warning for an unknown column");
+  }
+  // Live 2026-11-05 and 2026-11-11: this 14-day window is a 500 on stl and blue while each week returns 200; the walk must split it.
+  await call("netic_count", { tenant, start: "2026-09-10", end: "2026-09-23", report: "utilization", aggregate: "sum", group_by: ["type"] });
   await call("netic_get_utilization", { tenant, start: end, end, max_rows: 50 });
   await call("netic_get_utilization", { tenant, start: end, end, snapshot_date: start, snapshot_time: "08:00", type: "group" });
   await call("netic_get_utilization", { tenant, start: addDays(end, -44), end, type: "group", max_rows: 5 });

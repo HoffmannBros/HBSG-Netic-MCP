@@ -38,13 +38,14 @@ bearer JWT per tenant. TypeScript, Node, MCP SDK 1.x, bundled by esbuild into
 | `src/client.ts` | GET-only Netic client; path guard, preflight, hints, errors |
 | `src/endpoints.ts` | The report endpoints: paths, date param names, range limits, default columns |
 | `src/dates.ts` | Inclusive-range validation, range splitting |
-| `src/paging.ts` | Auto-paging over the `{data, pagination}` envelope; `walkRange` splits long utilization ranges |
+| `src/paging.ts` | Auto-paging over the `{data, pagination}` envelope; `walkRange` splits long utilization ranges and halves a window that returns a server error |
 | `src/utilization.ts` | Board cell text, % booked formula, name filter, footer notes |
 | `src/leads.ts` | Online scheduler leads: inclusion rule, export columns, repeat and follow-up flags, summary |
 | `src/transcripts.ts` | Calls Drill Down CSV: parse, find the newest per tenant, join to interactions, search, snippets, batching |
 | `src/tools/transcripts.ts` | `netic_search_call_transcripts`, `netic_get_call_transcripts`, and `withTranscripts`, shared with export |
 | `src/tools/leads.ts` | `netic_get_scheduler_leads` and `collectLeads`, shared with count and export |
-| `src/rows.ts`, `src/aggregate.ts` | `where` filter, column choice, grouped counts, utilization sums |
+| `src/rows.ts`, `src/aggregate.ts` | `where` filter, column choice, `RowScan` (derived columns, column warnings), grouped counts, utilization sums, averages |
+| `src/scorecard.ts`, `src/tools/scorecard.ts` | Outbound QA scorecard: parse `analysis`, the `qa_*` columns, the derived `outbound_scorecard_items` report |
 | `src/csv.ts` | Streaming CSV and JSON export spool |
 | `src/format.ts` | Markdown tables, the result footer, error text |
 | `src/tools/*.ts` | tenants, reports (incl. utilization), leads, transcripts, aggregate (count and sum), export, raw |
@@ -105,7 +106,16 @@ bearer JWT per tenant. TypeScript, Node, MCP SDK 1.x, bundled by esbuild into
   `transcript`, or `callTranscript`, that wins and no CSV is read. A month of one tenant is
   over a million tokens, so the tools search and batch server-side; never return them all.
 - Tool results must carry their rows in `structuredContent`: when it is present, Claude's
-  client shows the model only that, not the text.
+  client shows the model only that, not the text. The same goes for anything the model must
+  act on: `availableColumns`, `warnings` (unknown `fields`, `where`, `group_by`, or `value`
+  names), and `notes` are all there, and new caveats belong there too.
+- Utilization returns a 500 for some multi-day windows while each half returns 200, every
+  time (live 2026-11-05 and 2026-11-11). `walkRange` halves such a window down to one day;
+  the client does not retry it, and an explicit `page` cannot be split.
+- Outbound `analysis` is a JSON string holding Netic's QA scorecard for the CSR's call (filled
+  since 2026-11; blank on many rows). `RowScan` adds flat `qa_*` columns to every outbound
+  row before filtering and transcript stripping. `outbound_scorecard_items` is derived like
+  `scheduler_leads`: count and export only, not in `REPORTS`.
 - Scheduler bookings can take ~15 s and then 500 on a cold call; the client retries that one
   endpoint's 500s. Long ranges are fine everywhere; latency, not a limit, is the cost.
 

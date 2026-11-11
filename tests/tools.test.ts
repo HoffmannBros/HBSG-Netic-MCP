@@ -7,14 +7,16 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { SCORECARD_ITEM_COLUMNS } from "../src/scorecard.js";
+import { analysisJson } from "./scorecard-fixture.js";
 
 /**
  * Drives the built server's tools end to end against a local fake of the
  * Netic API, so paging, footers, counts, and exports are covered without a
- * real token.
+ * real token. NETIC_TEST_BUNDLE points it at another build of the server.
  */
 const root = path.resolve(__dirname, "..");
-const bundle = path.join(root, "server", "index.cjs");
+const bundle = process.env.NETIC_TEST_BUNDLE ?? path.join(root, "server", "index.cjs");
 
 interface Seen {
   method: string;
@@ -90,7 +92,36 @@ function rowsFor(pathname: string, url?: URL): Array<Record<string, unknown>> {
     }));
   }
   if (pathname.endsWith("/calls/outbound")) {
-    return [{ id: "c1", call_placed_at: "2026-09-01T09:00:00-05:00", agent_name: "A", summary: "s", transcript: "very long transcript", analysis: "" }];
+    // Invented CSR calls: no scorecard, two scored calls, and a malformed analysis. Values are strings, as the API sends them.
+    const base = { call_type: "", call_reason: "", job_id: "", call_duration_seconds: "" };
+    return [
+      { ...base, id: "c1", call_placed_at: "2026-09-01T09:00:00-05:00", agent_name: "A", agent_id: "11", service_titan_call_id: "801", summary: "s", transcript: "very long transcript", analysis: "" },
+      {
+        ...base,
+        id: "c2",
+        call_placed_at: "2026-09-02T10:00:00-05:00",
+        agent_name: "Agent Two",
+        agent_id: "22",
+        service_titan_call_id: "802",
+        call_duration_seconds: "120",
+        summary: "s",
+        transcript: "Customer: Hello?\nCXR: Hi, this call is recorded. Calling about your furnace tune up.\nCustomer: Please book the tune up.",
+        analysis: analysisJson({ score: 0.4, flagged: true, decision: 0.2 }),
+      },
+      {
+        ...base,
+        id: "c3",
+        call_placed_at: "2026-09-03T11:00:00-05:00",
+        agent_name: "Agent Two",
+        agent_id: "22",
+        service_titan_call_id: "803",
+        call_duration_seconds: "60",
+        summary: "s",
+        transcript: "Customer: Who is this?\nCXR: Checking on your water heater estimate.\nCustomer: Not interested.",
+        analysis: analysisJson({ score: 0.8, flagged: false, decision: 0.6 }),
+      },
+      { ...base, id: "c4", call_placed_at: "2026-09-04T12:00:00-05:00", agent_name: "Agent Three", agent_id: "33", service_titan_call_id: "804", summary: "s", transcript: "", analysis: "{malformed" },
+    ];
   }
   return [{ id: "r1", booked_at: "2026-09-01", referrer_email: "x@example.test", status: "Booked" }];
 }
@@ -332,6 +363,7 @@ describe("tools against a fake Netic API", () => {
     });
     expect(textOf(result)).toMatch(/Warning: these totals mix group rows with business_unit rows/);
     expect((result.structuredContent as { mixesTypes: boolean }).mixesTypes).toBe(true);
+    expect((result.structuredContent as { warnings: string[] }).warnings).toEqual([expect.stringMatching(/^these totals mix group rows with business_unit rows/)]);
   });
 
   it("builds scheduler leads with follow-up flags and a summary", async () => {
@@ -401,6 +433,205 @@ describe("tools against a fake Netic API", () => {
     });
     expect(result.isError).toBe(true);
     expect(textOf(result)).toMatch(/applies only to report=utilization/);
+  });
+
+  describe("columns and warnings in structuredContent", () => {
+    type Structured = { rows: Array<Record<string, unknown>>; availableColumns: string[]; warnings: string[]; notes: string[]; returned: number };
+
+    it("lists every column and sends an empty warnings array when all is well", async () => {
+      const result = await client.callTool({ name: "netic_get_interactions", arguments: { tenant: "stl", modality: "call", max_rows: 2, ...range } });
+      const s = result.structuredContent as Structured;
+      expect(s.availableColumns).toEqual(expect.arrayContaining(["id", "tenant", "date", "category", "leadSource", "phoneNumber", "trade", "reason"]));
+      expect(s.warnings).toEqual([]);
+      expect(s.notes).toEqual([]);
+    });
+
+    it("warns about a fields name that no row has, instead of returning blank rows silently", async () => {
+      const result = await client.callTool({
+        name: "netic_get_scheduler_bookings",
+        arguments: { tenant: "stl", fields: ["status", "nonexistent_col"], max_rows: 1, ...range },
+      });
+      const s = result.structuredContent as Structured;
+      expect(s.warnings).toHaveLength(1);
+      expect(s.warnings[0]).toMatch(/^fields not in any of the 1 scanned row\(s\): nonexistent_col, so those columns are blank\..*Available columns: id, booked_at, referrer_email, status\./);
+      expect(textOf(result)).toContain("Warning: fields not in any");
+    });
+
+    it("warns about a where column no row has, and still lists the columns when nothing matched", async () => {
+      const result = await client.callTool({ name: "netic_get_interactions", arguments: { tenant: "stl", modality: "call", where: { Category: "Booked" }, max_rows: 5, ...range } });
+      const s = result.structuredContent as Structured;
+      expect(s.returned).toBe(0);
+      expect(s.availableColumns).toContain("category");
+      expect(s.warnings[0]).toMatch(/^where column\(s\) not in any of the 1234 scanned row\(s\): Category\. A missing column reads as blank/);
+    });
+
+    it("does not warn about the board column it adds to utilization", async () => {
+      const result = await client.callTool({ name: "netic_get_utilization", arguments: { tenant: "stl", start: "2026-09-24", end: "2026-09-24", fields: ["name", "board"] } });
+      const s = result.structuredContent as Structured;
+      expect(s.warnings).toEqual([]);
+      expect(s.notes).toEqual(["timeZone America/Denver", "Live board"]);
+    });
+
+    it("tells an unknown group_by column apart from one that exists but is blank", async () => {
+      const unknown = await client.callTool({ name: "netic_count", arguments: { tenant: "stl", report: "outbound_calls", group_by: ["agentName"], ...range } });
+      const u = unknown.structuredContent as Structured;
+      expect(u.warnings).toEqual([expect.stringMatching(/^group_by column\(s\) not in any of the 4 scanned row\(s\): agentName, so every row groups as \(blank\)\..*agent_name/)]);
+      const blank = await client.callTool({ name: "netic_count", arguments: { tenant: "stl", report: "outbound_calls", group_by: ["call_type"], ...range } });
+      expect((blank.structuredContent as Structured).warnings).toEqual(["Every row is blank for call_type. The column exists but has no values in these rows."]);
+      expect(textOf(blank)).toContain("Warning: Every row is blank for call_type.");
+    });
+
+    it("warns about where and fields names in exports", async () => {
+      const result = await client.callTool({ name: "netic_export", arguments: { tenant: "stl", report: "referrer_bookings", fields: ["status", "bogus"], where: { Status: "Booked" }, ...range } });
+      const s = result.structuredContent as Structured & { rows: number };
+      expect(s.rows).toBe(0);
+      expect(s.warnings.map((w) => w.split(":")[0])).toEqual(["fields not in any of the 1 scanned row(s)", "where column(s) not in any of the 1 scanned row(s)"]);
+    });
+  });
+
+  describe("outbound CSR call scorecards", () => {
+    type Structured = { rows: Array<Record<string, unknown>>; columns: string[]; availableColumns: string[]; warnings: string[] };
+
+    it("derives the qa_* columns even with transcripts omitted, and shows them by default", async () => {
+      const result = await client.callTool({ name: "netic_get_outbound_calls", arguments: { tenant: "stl", ...range } });
+      expect(result.isError).toBeFalsy();
+      const s = result.structuredContent as Structured;
+      expect(s.columns).toEqual(expect.arrayContaining(["qa_score", "qa_is_lead", "qa_is_booked", "qa_is_flagged", "qa_is_excused", "qa_scored_items", "qa_na_items"]));
+      expect(s.availableColumns).not.toContain("transcript");
+      expect(s.availableColumns).not.toContain("analysis");
+      const byId = Object.fromEntries(s.rows.map((r) => [r.service_titan_call_id, r]));
+      expect(byId["802"]).toMatchObject({ qa_score: 0.4, qa_is_flagged: true, qa_is_booked: false, qa_scored_items: 2, qa_na_items: 1 });
+      expect(byId["801"]).toMatchObject({ qa_score: null, qa_is_flagged: null });
+      expect(byId["804"]).toMatchObject({ qa_score: null });
+      expect(s.warnings).toEqual([]);
+    });
+
+    it("filters on a derived column and adds per-item detail on request", async () => {
+      const result = await client.callTool({
+        name: "netic_get_outbound_calls",
+        arguments: { tenant: "stl", where: { qa_is_flagged: "true" }, include_scorecard: true, ...range },
+      });
+      const s = result.structuredContent as Structured;
+      expect(s.rows).toHaveLength(1);
+      expect(s.columns.at(-1)).toBe("qa_items");
+      expect(s.rows[0]?.qa_items).toEqual([
+        { section: "Options Were Reviewed", item: "Make Clear the Decision Is the Customer's", score: 0.2, reason: "Invented reason one." },
+        { section: "Recorded Line / All Parties Aware", item: "State the Line Is Recorded", score: 1, reason: "Invented reason three." },
+      ]);
+      expect(s.rows[0]).not.toHaveProperty("transcript");
+    });
+
+    it("averages qa_score per CSR, skipping calls with no scorecard", async () => {
+      const result = await client.callTool({
+        name: "netic_count",
+        arguments: { tenant: "stl", report: "outbound_calls", aggregate: "avg", value: "qa_score", group_by: ["agent_name"], ...range },
+      });
+      expect(result.isError).toBeFalsy();
+      const s = result.structuredContent as { total: number; n: number; avg: number; skipped: number; groups: unknown[]; warnings: string[] };
+      expect(s).toMatchObject({ total: 4, n: 2, avg: 0.6, skipped: 2, warnings: [] });
+      expect(s.groups).toEqual([
+        { values: ["Agent Two"], rows: 2, n: 2, avg: 0.6, min: 0.4, max: 0.8 },
+        { values: ["A"], rows: 1, n: 0, avg: null, min: null, max: null },
+        { values: ["Agent Three"], rows: 1, n: 0, avg: null, min: null, max: null },
+      ]);
+      expect(textOf(result)).toMatch(/^Average of qa_score over 2 of 4 outbound CSR calls .*: 0\.6, in 3 group\(s\)\. 2 row\(s\) skipped/);
+    });
+
+    it("averages string durations and counts flagged calls per CSR", async () => {
+      const avg = await client.callTool({
+        name: "netic_count",
+        arguments: { tenant: "stl", report: "outbound_calls", aggregate: "avg", value: "call_duration_seconds", group_by: ["agent_name"], ...range },
+      });
+      expect((avg.structuredContent as { groups: Array<{ values: string[]; avg: number }> }).groups[0]).toMatchObject({ values: ["Agent Two"], avg: 90 });
+      const count = await client.callTool({ name: "netic_count", arguments: { tenant: "stl", report: "outbound_calls", group_by: ["agent_name", "qa_is_flagged"], ...range } });
+      expect((count.structuredContent as { groups: unknown[] }).groups).toEqual([
+        { values: ["A", "(blank)"], count: 1 },
+        { values: ["Agent Three", "(blank)"], count: 1 },
+        { values: ["Agent Two", "false"], count: 1 },
+        { values: ["Agent Two", "true"], count: 1 },
+      ]);
+    });
+
+    it("rolls scorecard items up across calls for the items CSRs miss most", async () => {
+      const result = await client.callTool({
+        name: "netic_count",
+        arguments: { tenant: "stl", report: "outbound_scorecard_items", aggregate: "avg", value: "score", group_by: ["section", "item"], ...range },
+      });
+      expect(result.isError).toBeFalsy();
+      const s = result.structuredContent as { total: number; groups: unknown[]; warnings: string[]; scanned: number };
+      expect(s.total).toBe(4);
+      expect(s.scanned).toBe(4);
+      expect(s.warnings).toEqual([]);
+      expect(s.groups).toEqual([
+        { values: ["Options Were Reviewed", "Make Clear the Decision Is the Customer's"], rows: 2, n: 2, avg: 0.4, min: 0.2, max: 0.6 },
+        { values: ["Recorded Line / All Parties Aware", "State the Line Is Recorded"], rows: 2, n: 2, avg: 1, min: 1, max: 1 },
+      ]);
+      const unknown = await client.callTool({ name: "netic_count", arguments: { tenant: "stl", report: "outbound_scorecard_items", group_by: ["parameter"], ...range } });
+      expect((unknown.structuredContent as { warnings: string[] }).warnings[0]).toMatch(/^group_by column\(s\) not in any of the 4 scanned row\(s\): parameter/);
+    });
+
+    it("refuses avg without a value column", async () => {
+      const result = await client.callTool({ name: "netic_count", arguments: { tenant: "stl", report: "outbound_calls", aggregate: "avg", group_by: ["agent_name"], ...range } });
+      expect(result.isError).toBe(true);
+      expect(textOf(result)).toMatch(/aggregate=avg needs value/);
+    });
+
+    it("exports the qa_* columns and the item rows", async () => {
+      const calls = await client.callTool({ name: "netic_export", arguments: { tenant: "stl", report: "outbound_calls", include_transcript: false, format: "json", ...range } });
+      const c = calls.structuredContent as { path: string; columns: string[] };
+      expect(c.columns).toEqual(expect.arrayContaining(["qa_score", "qa_is_flagged"]));
+      expect(c.columns).not.toContain("transcript");
+      const rows = JSON.parse(await fsp.readFile(c.path, "utf8")) as Array<Record<string, unknown>>;
+      expect(rows.find((r) => r.id === "c3")).toMatchObject({ qa_score: 0.8, qa_is_flagged: false });
+
+      const items = await client.callTool({ name: "netic_export", arguments: { tenant: "stl", report: "outbound_scorecard_items", ...range } });
+      const s = items.structuredContent as { path: string; rows: number };
+      expect(s.rows).toBe(4);
+      const lines = (await fsp.readFile(s.path, "utf8")).replace(/^﻿/, "").split(/\r?\n/).filter(Boolean);
+      expect(lines[0]).toBe(SCORECARD_ITEM_COLUMNS.join(","));
+      expect(lines).toHaveLength(5);
+    });
+
+    it("searches outbound transcripts by speaker and counts matches by CSR", async () => {
+      const result = await client.callTool({
+        name: "netic_search_call_transcripts",
+        arguments: { tenant: "stl", source: "outbound", query: '"tune up"', speaker: "user", ...range },
+      });
+      expect(result.isError).toBeFalsy();
+      const s = result.structuredContent as {
+        matched: number;
+        searched: number;
+        groups: unknown[];
+        results: Array<Record<string, unknown> & { snippets: string[] }>;
+        notes: string[];
+        warnings: string[];
+      };
+      expect(s).toMatchObject({ matched: 1, searched: 3, warnings: [] });
+      expect(s.groups).toEqual([{ values: ["Agent Two"], count: 1 }]);
+      expect(s.results[0]).toMatchObject({ id: "c2", agent_name: "Agent Two", qa_score: 0.4 });
+      expect(s.results[0]?.snippets[0]).toMatch(/^Customer: .*tune up/);
+      expect(s.notes).toEqual(["transcripts from the API on 3 of 4 call(s)"]);
+      const agent = await client.callTool({ name: "netic_search_call_transcripts", arguments: { tenant: "stl", source: "outbound", query: "recorded", speaker: "agent", ...range } });
+      expect((agent.structuredContent as { matched: number }).matched).toBe(1);
+      const customer = await client.callTool({ name: "netic_search_call_transcripts", arguments: { tenant: "stl", source: "outbound", query: "recorded", speaker: "user", ...range } });
+      expect((customer.structuredContent as { matched: number }).matched).toBe(0);
+    });
+
+    it("reads outbound transcripts by ServiceTitan call id", async () => {
+      const result = await client.callTool({ name: "netic_get_call_transcripts", arguments: { tenant: "stl", source: "outbound", ids: ["803"], ...range } });
+      expect(result.isError).toBeFalsy();
+      const s = result.structuredContent as { calls: Array<Record<string, unknown>>; warnings: string[] };
+      expect(s.calls).toHaveLength(1);
+      expect(s.calls[0]).toMatchObject({ id: "c3", qa_score: 0.8 });
+      expect(s.calls[0]?.transcript).toContain("water heater");
+      expect(s.warnings).toEqual([]);
+    });
+
+    it("refuses csv_path for outbound", async () => {
+      const result = await client.callTool({ name: "netic_search_call_transcripts", arguments: { tenant: "stl", source: "outbound", query: "x", csv_path: "x.csv", ...range } });
+      expect(result.isError).toBe(true);
+      expect(textOf(result)).toMatch(/csv_path applies only to source=inbound/);
+    });
   });
 
   describe("inbound call transcripts from the Calls Drill Down CSV", () => {

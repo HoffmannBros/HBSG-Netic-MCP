@@ -55,11 +55,11 @@ export const reportArg = z
     "interactions (needs modality), scheduler_sessions, scheduler_bookings, tgl_bookings, referrer_bookings, outbound_calls, or utilization (Utilization Board: % booked per business unit or group per day).",
   );
 
-/** Count and export also take the derived scheduler_leads report. */
+/** Count and export also take the derived scheduler_leads and outbound_scorecard_items reports. */
 export const countReportArg = z
-  .enum([...REPORTS, "scheduler_leads"])
+  .enum([...REPORTS, "scheduler_leads", "outbound_scorecard_items"])
   .describe(
-    "interactions (needs modality), scheduler_sessions, scheduler_bookings, tgl_bookings, referrer_bookings, outbound_calls, utilization (Utilization Board: % booked per business unit or group per day), or scheduler_leads (the dashboard's online scheduler leads export: identified sessions with bounce follow-up flags, as in netic_get_scheduler_leads; columns such as Booked, Furthest Stage Reached, Service, UTM Source, recovered).",
+    "interactions (needs modality), scheduler_sessions, scheduler_bookings, tgl_bookings, referrer_bookings, outbound_calls (human CSR calls, with the derived qa_* scorecard columns), utilization (Utilization Board: % booked per business unit or group per day), scheduler_leads (the dashboard's online scheduler leads export: identified sessions with bounce follow-up flags, as in netic_get_scheduler_leads; columns such as Booked, Furthest Stage Reached, Service, UTM Source, recovered), or outbound_scorecard_items (one row per applicable QA scorecard item of each outbound CSR call: call_placed_at, agent_name, agent_id, service_titan_call_id, job_id, section, item, score 0 to 1 or blank, reason).",
   );
 
 export const fieldsArg = z

@@ -5,7 +5,8 @@ import type { AppContext } from "../context.js";
 import { REPORT_INFO, type Modality, type Report } from "../endpoints.js";
 import { footer, markdownTable, textResult } from "../format.js";
 import { rangeNotes, singleRangePage, walkRange } from "../paging.js";
-import { inlineColumns, project, stripTranscripts, wherePredicate, type Where } from "../rows.js";
+import { RowScan, columnWarnings, inlineColumns, project, stripTranscripts, type Where } from "../rows.js";
+import { scorecardItems } from "../scorecard.js";
 import { namePredicate, utilizationNotes, withBoardCell } from "../utilization.js";
 import {
   READ_ONLY,
@@ -44,6 +45,7 @@ interface CommonArgs {
   modality?: Modality | undefined;
   agent_ids?: Array<string | number> | undefined;
   include_transcript?: boolean | undefined;
+  include_scorecard?: boolean | undefined;
   snapshot_date?: string | undefined;
   snapshot_time?: string | undefined;
 }
@@ -52,23 +54,28 @@ async function runReport(ctx: AppContext, report: Report, args: CommonArgs, extr
   const client = ctx.clientFor(args.tenant);
   const info = REPORT_INFO[report];
   const params = reportParams(report, args);
-  const whereFn = wherePredicate(args.where);
-  const filter = whereFn && extraFilter ? (r: Row) => whereFn(r) && extraFilter(r) : (whereFn ?? extraFilter);
+  const scan = new RowScan(report, { where: args.where, extra: extraFilter, watch: args.fields });
   const before = client.requestCount;
   const result =
     args.page !== undefined
-      ? await singleRangePage(client, report, params, args.start, args.end, args.page, args.page_size ?? 100, filter)
+      ? await singleRangePage(client, report, params, args.start, args.end, args.page, args.page_size ?? 100, scan.filter)
       : await walkRange(client, report, params, args.start, args.end, {
           pageSize: Math.min(5000, Math.max(args.max_rows, 100)),
           maxRows: args.max_rows,
-          filter,
+          filter: scan.filter,
         });
   const apiCalls = client.requestCount - before;
-  const stripped = stripTranscripts(result.rows, report, args.include_transcript ?? false);
+  const scored = args.include_scorecard ? result.rows.map((r) => ({ ...r, qa_items: scorecardItems(r.analysis) })) : result.rows;
+  const stripped = stripTranscripts(scored, report, args.include_transcript ?? false);
   const rows = report === "utilization" ? withBoardCell(stripped) : stripped;
-  const { columns, available } = inlineColumns(rows, report, args.fields);
+  const picked = inlineColumns(rows, report, args.fields);
+  const columns = args.include_scorecard && !args.fields ? [...picked.columns, "qa_items"] : picked.columns;
+  // When where kept nothing, the scanned rows still say which columns exist.
+  const available = rows.length > 0 ? picked.available : scan.columns();
   const notes = report === "utilization" ? utilizationNotes(result.extras) : [];
   notes.push(...rangeNotes(result, info.maxRangeDays));
+  const added = [...(report === "utilization" ? ["board"] : []), ...(args.include_scorecard ? ["qa_items"] : [])];
+  const warnings = columnWarnings(scan, { fields: args.fields, where: args.where, added });
   const lines = [
     `${info.label} for tenant ${client.tenant}${args.modality ? ` (modality ${args.modality})` : ""}.`,
     markdownTable(rows, columns),
@@ -79,6 +86,7 @@ async function runReport(ctx: AppContext, report: Report, args: CommonArgs, extr
   if (report === "outbound_calls" && !args.include_transcript) {
     lines.push("Transcripts omitted; pass include_transcript=true to include them (large).");
   }
+  for (const w of warnings) lines.push(`Warning: ${w}`);
   lines.push(
     footer({
       tenant: client.tenant,
@@ -89,7 +97,7 @@ async function runReport(ctx: AppContext, report: Report, args: CommonArgs, extr
       totalRecords: result.totalRecords,
       hasMore: result.hasMore,
       scanned: result.scanned,
-      filtered: filter !== undefined,
+      filtered: scan.filtered,
       apiCalls,
       moreHint:
         args.page !== undefined
@@ -99,7 +107,7 @@ async function runReport(ctx: AppContext, report: Report, args: CommonArgs, extr
     }),
   );
   // Claude's client shows the model only structuredContent when it is present,
-  // so the rows must be here, not just in the text.
+  // so the rows, the column list, and the warnings must be here, not just in the text.
   return textResult(lines.join("\n\n"), {
     tenant: client.tenant,
     report,
@@ -111,7 +119,10 @@ async function runReport(ctx: AppContext, report: Report, args: CommonArgs, extr
     scanned: result.scanned,
     hasMore: result.hasMore,
     columns,
+    availableColumns: available,
     rows: rows.map((r) => project(r, columns)),
+    notes,
+    warnings,
     apiCalls,
   });
 }
@@ -137,7 +148,8 @@ const DESCRIPTIONS: Record<Exclude<Report, "interactions" | "scheduler_sessions"
 };
 
 const SUFFIX =
-  " Dates are YYYY-MM-DD, both inclusive, tenant local time. Auto-pages up to max_rows; the footer shows rows returned of totalRecords and hasMore, so check it before treating the rows as complete.";
+  " Dates are YYYY-MM-DD, both inclusive, tenant local time. Auto-pages up to max_rows; the footer shows rows returned of totalRecords and hasMore, so check it before treating the rows as complete. " +
+  "The result lists availableColumns (every column the rows have; no need to fetch a row to learn them) and warnings: read warnings before trusting the rows, since an unknown fields or where name is reported there rather than as an error.";
 
 export function registerReportTools(server: McpServer, ctx: AppContext): void {
   const base = {
@@ -203,12 +215,18 @@ export function registerReportTools(server: McpServer, ctx: AppContext): void {
     {
       title: "Get Netic outbound CSR calls",
       description:
-        "Outbound calls placed by human CSRs in ServiceTitan, with AI summary, call type and reason, agent, duration, and any booked job id. Transcripts are omitted unless include_transcript=true, because they are very large." +
+        "Outbound calls placed by human CSRs in ServiceTitan (not the Netic AI agent's inbound calls), with AI summary, call type and reason, agent, duration, any booked job id, and Netic's QA scorecard for the call. " +
+        "Scorecard columns, derived from the analysis column on every row even when transcripts are omitted: qa_score (aggregate_score, 0 to 1: Netic's AI grade of how well the CSR handled the call against sections such as Recorded Line / All Parties Aware, Full Understanding, Equipment Options, Options Were Reviewed), qa_is_lead, qa_is_booked, qa_is_flagged, qa_is_excused (true, false, or blank when the call has no scorecard), qa_scored_items and qa_na_items (items scored and not applicable). They work in fields and where, e.g. where {\"qa_is_flagged\":\"true\"}. " +
+        "include_scorecard=true adds qa_items, each applicable item as {section, item, score, reason}, for reading a few calls. For averages by CSR use netic_count aggregate=avg value=qa_score group_by [\"agent_name\"]; for the items CSRs miss most use netic_count report=outbound_scorecard_items. Transcripts are omitted unless include_transcript=true, because they are very large; netic_search_call_transcripts source=outbound searches them." +
         SUFFIX,
       inputSchema: {
         ...base,
         agent_ids: agentIdsArg,
-        include_transcript: z.boolean().default(false).describe("Include the transcript and analysis columns. Default false; keep max_rows small if true."),
+        include_transcript: z.boolean().default(false).describe("Include the transcript and raw analysis columns. Default false; keep max_rows small if true. The qa_* columns are there either way."),
+        include_scorecard: z
+          .boolean()
+          .default(false)
+          .describe("Add qa_items: each applicable scorecard item as {section, item, score, reason}. Default false; keep max_rows small, since each call has about ten items."),
       },
       annotations: READ_ONLY,
     },
@@ -225,7 +243,7 @@ export function registerReportTools(server: McpServer, ctx: AppContext): void {
         `The board cell is "N jobs · X%" (the board column here). percentBooked null is the board's "No shifts": no shift hours that day, even if jobs exist; 0% means shifts but nothing booked or no time left after non-job hours. ` +
         "Groups (type=group) roll up business units that share technicians, e.g. Blue Sky's HVAC Service group = the HVAC Service and HVAC Maintenance units; a member unit's groups column names its group. Group rows are not additive with their members, so never add a group to its units. " +
         "Live (default) is the board as it stands now, for any dates including past and future days. snapshot_date (and optionally snapshot_time) is the board's Point in time: the board as it stood at that moment, before later bookings, cancellations, and edits. " +
-        "Dates are YYYY-MM-DD, both inclusive, tenant local time (America/Denver for Blue Sky, America/Chicago for the others). Netic allows 31 days per request; longer ranges are split automatically. For totals across days (e.g. weekly % booked per unit) use netic_count with aggregate=sum.",
+        "Dates are YYYY-MM-DD, both inclusive, tenant local time (America/Denver for Blue Sky, America/Chicago for the others). Netic allows 31 days per request; longer ranges are split automatically. For totals across days (e.g. weekly % booked per unit) use netic_count with aggregate=sum. The result lists availableColumns and warnings; read warnings before trusting the rows.",
       inputSchema: {
         tenant: tenantArg(ctx),
         start: startArg,

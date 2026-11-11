@@ -66,7 +66,10 @@ export function registerRawTools(server: McpServer, ctx: AppContext): void {
           .filter(Boolean)
           .join("\n\n");
         const { data: _rows, pagination: _p, ...extras } = data;
-        return textResult(text, { tenant: client.tenant, path, ...extras, pagination: p, returned: shown.length, rows: shown, savedPath, apiCalls });
+        const warnings: string[] = [];
+        if (shown.length < data.data.length) warnings.push(`Only ${shown.length} of the ${data.data.length} rows on this page are returned (max_items); raise max_items or use save_as.`);
+        if (p.hasMore) warnings.push(`This is page ${p.page} of ${p.totalPages} (${p.totalRecords} rows in all); this tool does not auto-page, so use netic_count or netic_export for totals.`);
+        return textResult(text, { tenant: client.tenant, path, ...extras, pagination: p, returned: shown.length, rows: shown, savedPath, warnings, apiCalls });
       }
       const json = JSON.stringify(data, null, 2);
       const truncated = json.length > BODY_CAP;
@@ -79,7 +82,8 @@ export function registerRawTools(server: McpServer, ctx: AppContext): void {
       ]
         .filter(Boolean)
         .join("\n\n");
-      return textResult(text, { tenant: client.tenant, path, ...(truncated ? { truncated: true } : { body: data }), savedPath, apiCalls });
+      const warnings = truncated ? [`The response is over ${BODY_CAP} characters, so the body is left out here; use save_as to get all of it.`] : [];
+      return textResult(text, { tenant: client.tenant, path, ...(truncated ? { truncated: true } : { body: data }), savedPath, warnings, apiCalls });
     }),
   );
 }

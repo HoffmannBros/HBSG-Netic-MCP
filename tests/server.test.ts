@@ -7,7 +7,7 @@ import path from "node:path";
 import { DRAFT_07_ONLY_KEYWORDS, JSON_SCHEMA_DIALECT } from "../src/schema-compat.js";
 
 const root = path.resolve(__dirname, "..");
-const bundle = path.join(root, "server", "index.cjs");
+const bundle = process.env.NETIC_TEST_BUNDLE ?? path.join(root, "server", "index.cjs");
 
 const EXPECTED_TOOLS = [
   "netic_list_tenants",

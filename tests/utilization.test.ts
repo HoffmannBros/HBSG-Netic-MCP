@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GroupSummer } from "../src/aggregate.js";
 import { NeticClient, NeticRequestError, type Row } from "../src/client.js";
-import { DateError, addDays, latestDateAnywhere, splitRange } from "../src/dates.js";
+import { DateError, addDays, halveRange, latestDateAnywhere, splitRange } from "../src/dates.js";
 import { UTILIZATION_PATH } from "../src/endpoints.js";
 import { singleRangePage, walkRange } from "../src/paging.js";
 import { boardCell, namePredicate, percentBooked } from "../src/utilization.js";
@@ -24,6 +24,30 @@ describe("splitRange", () => {
     expect(chunks).toHaveLength(12);
     for (let i = 1; i < chunks.length; i += 1) expect(chunks[i]?.start).toBe(addDays(chunks[i - 1]!.end, 1));
     expect(chunks.at(-1)?.end).toBe("2026-12-31");
+  });
+});
+
+describe("halveRange", () => {
+  it("halves an even range evenly and gives the first half the odd day", () => {
+    expect(halveRange("2026-09-10", "2026-09-23")).toEqual([
+      { start: "2026-09-10", end: "2026-09-16" },
+      { start: "2026-09-17", end: "2026-09-23" },
+    ]);
+    expect(halveRange("2026-08-01", "2026-08-31")).toEqual([
+      { start: "2026-08-01", end: "2026-08-16" },
+      { start: "2026-08-17", end: "2026-08-31" },
+    ]);
+  });
+
+  it("splits two days into two single days, across a month end", () => {
+    expect(halveRange("2026-09-30", "2026-10-01")).toEqual([
+      { start: "2026-09-30", end: "2026-09-30" },
+      { start: "2026-10-01", end: "2026-10-01" },
+    ]);
+  });
+
+  it("refuses a single day", () => {
+    expect(() => halveRange("2026-09-15", "2026-09-15")).toThrow(DateError);
   });
 });
 

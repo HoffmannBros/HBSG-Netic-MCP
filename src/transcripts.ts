@@ -239,12 +239,24 @@ export interface Turn {
   text: string;
 }
 
-const TURN = /(?:^|\n)(Agent|User):[ \t]?/g;
+/** Speaker labels: inbound AI calls say Agent and User; outbound CSR calls say CXR and Customer. */
+export interface SpeakerLabels {
+  agent: string;
+  user: string;
+}
 
-/** Split "Agent: …\nUser: …" into turns. Text before the first label is one unlabeled turn. */
-export function turns(transcript: string): Turn[] {
+export const INBOUND_SPEAKERS: SpeakerLabels = { agent: "Agent", user: "User" };
+export const OUTBOUND_SPEAKERS: SpeakerLabels = { agent: "CXR", user: "Customer" };
+
+const turnPattern = (labels: SpeakerLabels) => new RegExp(`(?:^|\\n)(${labels.agent}|${labels.user}):[ \\t]?`, "g");
+const TURN = turnPattern(INBOUND_SPEAKERS);
+const OUTBOUND_TURN = turnPattern(OUTBOUND_SPEAKERS);
+
+/** Split "Agent: …\nUser: …" (or "CXR:" and "Customer:") into turns. Text before the first label is one unlabeled turn. */
+export function turns(transcript: string, labels: SpeakerLabels = INBOUND_SPEAKERS): Turn[] {
   const out: Turn[] = [];
-  const marks = [...transcript.matchAll(TURN)];
+  const pattern = labels === INBOUND_SPEAKERS ? TURN : labels === OUTBOUND_SPEAKERS ? OUTBOUND_TURN : turnPattern(labels);
+  const marks = [...transcript.matchAll(pattern)];
   const lead = marks.length > 0 ? transcript.slice(0, marks[0]!.index).trim() : transcript.trim();
   if (lead) out.push({ speaker: "", text: lead });
   for (const [i, m] of marks.entries()) {
@@ -433,10 +445,16 @@ export function buildMatcher(query: string, opts: { match: "any" | "all"; regex:
 export type Speaker = "any" | "agent" | "user";
 
 /** The text a search looks at: the whole transcript, or one side's turns. */
-export function searchable(transcript: string, speaker: Speaker): Turn[] {
-  if (speaker === "any") return turns(transcript);
-  const want = speaker === "agent" ? "Agent" : "User";
-  return turns(transcript).filter((t) => t.speaker === want);
+export function searchable(transcript: string, speaker: Speaker, labels: SpeakerLabels = INBOUND_SPEAKERS): Turn[] {
+  if (speaker === "any") return turns(transcript, labels);
+  const want = speaker === "agent" ? labels.agent : labels.user;
+  return turns(transcript, labels).filter((t) => t.speaker === want);
+}
+
+/** Transcript stats for calls whose transcripts come straight from the API rows (outbound). */
+export function apiStats(rows: Row[]): JoinStats {
+  const withTranscript = rows.filter((r) => typeof r.transcript === "string" && r.transcript.trim() !== "").length;
+  return { source: "api", apiRows: rows.length, withTranscript, matchedBlank: 0, unmatched: rows.length - withTranscript, ambiguous: 0, csvUnused: 0 };
 }
 
 /** Up to `max` snippets around hits, each labeled with its speaker. */

@@ -6,11 +6,12 @@ import type { AppContext } from "../context.js";
 import { REPORT_INFO, TRANSCRIPT_COLUMNS } from "../endpoints.js";
 import { footer, formatBytes, markdownTable, textResult } from "../format.js";
 import { rangeNotes, walkRange } from "../paging.js";
-import { dropColumns, project, wherePredicate } from "../rows.js";
+import { RowScan, columnWarnings, dropColumns, project, type ColumnSource } from "../rows.js";
 import { utilizationNotes } from "../utilization.js";
 import { TRANSCRIPT_FIELDS, joinNotes } from "../transcripts.js";
 import { csvPathArg, withTranscripts } from "./transcripts.js";
 import { LEADS_LABEL, LEADS_REPORT, checkContactsArg, collectLeads, repeatWindowArg, type FollowUpInfo } from "./leads.js";
+import { SCORECARD_LABEL, SCORECARD_REPORT, walkScorecardItems } from "./scorecard.js";
 import {
   READ_ONLY,
   agentIdsArg,
@@ -37,7 +38,7 @@ export function registerExportTools(server: McpServer, ctx: AppContext): void {
     {
       title: "Export a Netic report to a file",
       description:
-        "Pull every page of a report for the date range into a CSV or JSON file in the export folder, and return the path, row count, columns, and a short preview. Use this for full or large pulls instead of netic_get_*. CSV is UTF-8 with a BOM for Excel. Existing files are never overwritten. Dates are YYYY-MM-DD, both inclusive, tenant local time. Utilization ranges over 31 days are split into several requests automatically.",
+        "Pull every page of a report for the date range into a CSV or JSON file in the export folder, and return the path, row count, columns, and a short preview. Use this for full or large pulls instead of netic_get_*. CSV is UTF-8 with a BOM for Excel. Existing files are never overwritten. Dates are YYYY-MM-DD, both inclusive, tenant local time. Utilization ranges over 31 days are split into several requests automatically. Outbound calls carry the derived qa_* scorecard columns; report=outbound_scorecard_items writes one row per applicable scorecard item. The result lists notes and warnings (e.g. a fields or where name no row has); read warnings before trusting the file.",
       inputSchema: {
         tenant: tenantArg(ctx),
         report: countReportArg,
@@ -90,6 +91,7 @@ export function registerExportTools(server: McpServer, ctx: AppContext): void {
       let apiCalls: number;
       let notes: string[];
       let followUp: FollowUpInfo | undefined;
+      let source: ColumnSource;
       try {
         if (args.report === LEADS_REPORT) {
           const leads = await collectLeads(client, args);
@@ -100,14 +102,23 @@ export function registerExportTools(server: McpServer, ctx: AppContext): void {
           apiCalls = leads.apiCalls;
           notes = leads.notes;
           followUp = leads.followUp;
+          source = leads.source;
+        } else if (args.report === SCORECARD_REPORT) {
+          const items = await walkScorecardItems(client, args, write);
+          label = SCORECARD_LABEL;
+          result = items.walked;
+          apiCalls = items.apiCalls;
+          notes = [`${items.items} applicable scorecard item(s) from ${items.walked.scanned} call(s); max_rows caps the calls read`];
+          source = items.source;
         } else {
           const info = REPORT_INFO[args.report];
           const params = reportParams(args.report, args);
+          const scan = new RowScan(args.report, { where: args.where, watch: args.fields });
           const before = client.requestCount;
           const walked = await walkRange(client, args.report, params, args.start, args.end, {
             pageSize: 5000,
             maxRows: args.max_rows,
-            filter: wherePredicate(args.where),
+            filter: scan.filter,
             onRows: joinTranscripts ? undefined : write,
           });
           let joinedNotes: string[] = [];
@@ -120,6 +131,7 @@ export function registerExportTools(server: McpServer, ctx: AppContext): void {
           label = info.label;
           apiCalls = client.requestCount - before;
           notes = [...(args.report === "utilization" ? utilizationNotes(walked.extras) : []), ...rangeNotes(walked, info.maxRangeDays), ...joinedNotes];
+          source = scan;
         }
       } catch (err) {
         await spool.discard();
@@ -129,10 +141,12 @@ export function registerExportTools(server: McpServer, ctx: AppContext): void {
         args.filename ??
         `netic_${client.tenant}_${args.report}${args.modality ? `_${args.modality}` : ""}_${args.start}_${args.end}`;
       const out = await spool.finalize(withExtension(sanitizeFilename(name), args.format), { format: args.format, bom: args.bom });
+      const warnings = columnWarnings(source, { fields: args.fields, where: args.where, added: joinTranscripts ? TRANSCRIPT_FIELDS : [] });
       const previewColumns = out.columns.filter((c) => !(TRANSCRIPT_COLUMNS as readonly string[]).includes(c) && c !== "firstUserLine").slice(0, 10);
       const text = [
         `Wrote ${out.rows} ${label} row(s) for tenant ${client.tenant} to ${out.path} (${formatBytes(out.bytes)}).`,
         `Columns (${out.columns.length}): ${out.columns.join(", ")}`,
+        ...warnings.map((w) => `Warning: ${w}`),
         out.rows > 0 ? `Preview:\n\n${markdownTable(preview, previewColumns, 80)}` : "",
         footer({
           tenant: client.tenant,
@@ -143,7 +157,7 @@ export function registerExportTools(server: McpServer, ctx: AppContext): void {
           totalRecords: result.totalRecords,
           hasMore: result.hasMore,
           scanned: result.scanned,
-          filtered: args.where !== undefined || args.report === LEADS_REPORT,
+          filtered: args.where !== undefined || args.report === LEADS_REPORT || args.report === SCORECARD_REPORT,
           apiCalls,
           moreHint: "The max_rows cap was hit, so the file is partial. Raise max_rows or split the dates.",
           notes,
@@ -163,6 +177,8 @@ export function registerExportTools(server: McpServer, ctx: AppContext): void {
         ...(followUp ? { followUp } : {}),
         totalRecords: result.totalRecords,
         hasMore: result.hasMore,
+        notes,
+        warnings,
         apiCalls,
       });
     }),

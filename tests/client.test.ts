@@ -165,6 +165,16 @@ describe("NeticClient", () => {
     expect(err.message).toMatch(/scheduler_sessions/);
   });
 
+  it("does not retry a utilization 500, and says the typed tools split and how to halve by hand", async () => {
+    const { client, calls } = makeClient(() => jsonResponse({ error: "Failed to fetch utilization" }, 500));
+    const err = (await client.get("/api/public/metrics/utilization", { startDate: "2026-09-10", endDate: "2026-09-23" }).catch((e: unknown) => e)) as NeticApiError;
+    expect(calls).toHaveLength(1);
+    expect(err.status).toBe(500);
+    expect(err.message).toMatch(/some multi-day windows/);
+    expect(err.message).toMatch(/netic_get_utilization, netic_count, and netic_export split/);
+    expect(err.message).toMatch(/netic_api_call or page, halve the date range/);
+  });
+
   it("does not retry a 500 elsewhere", async () => {
     const { client, calls } = makeClient(() => jsonResponse({ error: "boom" }, 500));
     await expect(client.get("/api/public/metrics/bookings/referrer", range)).rejects.toThrow(/500/);

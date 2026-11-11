@@ -191,3 +191,31 @@ probed. Counts only; transcripts carry PII and stay out of the repo.
   export). The transcript tools use that join (`src/transcripts.ts`).
 - `npm run probe` now records `transcriptKeys` per endpoint, so it will show when the API
   gains the field.
+
+### 2026-11-11, all four tenants (`npm run probe`, window 2026-11-04 to 2026-11-10)
+
+- **No row or envelope drift** on any endpoint against 2026-09-25. Inclusive bounds, pageSize
+  limits, error statuses, the utilization 31-day cap, and the outbound CSV default are
+  unchanged. Still no inbound transcript key, and `calls/inbound`, `transcripts`,
+  `utilization/shift-warnings`, and `capacity` are 404.
+- **Outbound `analysis` is now filled** on every tenant (the spec says "empty for now"). It is
+  a JSON string: `{aggregate_score (0 to 1), is_lead, is_booked, is_flagged, is_excused,
+  sections: [{name, parameters: [{name, score (number or null), reason, not_applicable}]}]}`.
+  Sections seen on stl: Equipment Options, Full Understanding, Options Were Reviewed, Recorded
+  Line / All Parties Aware. `call_type` and `call_reason` were blank on the rows looked at.
+  Not every call has one: stl 2026-11-04 to 11-10 had a scorecard on 705 of 1,774 calls,
+  with 930 applicable scored items across 9 distinct items.
+- **Outbound volume.** Rows for the week: stl 1,774 (was 3), nash 590, blue 813, ferg 99
+  (was 0). Ferguson now also has TGL rows (2 in 90 days).
+- **Utilization rows per day:** stl 23 (was 22), ferg 20 (was 16, now 8 groups), nash 20,
+  blue 14.
+- **Utilization 500s that depend on the range, not the day.** stl live 2026-09-10 to
+  2026-09-23 is a 500 every time (also on 2026-11-05), while 09-10 to 09-16 and 09-17 to
+  09-23 each return 200. Same pattern for blue, and for stl with a 2025-11-03 06:00 snapshot
+  (11-03 to 11-16 fails, both halves pass). Since v0.5.0 `walkRange` halves a failing window
+  and walks the halves; the stl window above then returns 322 rows in 3 requests.
+- **Scheduler bookings** still 500 after three attempts (about 47 s) on stl and blue; nash
+  15.6 s and ferg 12.2 s.
+- **Long interaction ranges** at pageSize 1: stl 31 d 3.3 s, 92 d 14 s, 366 d 89 s; nash
+  366 d 45 s, 731 d 219 s (past the 120 s client timeout, landed on a retry). Latency grows
+  faster than the range, so 31-day windows would be quicker than one long request.
