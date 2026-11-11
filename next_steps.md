@@ -4,7 +4,7 @@ Handoff state for HBSG-Netic-MCP.
 
 **Last updated:** 2026-11-11 (v0.5.0 built and smoke-tested on stl: visible columns and
 warnings, utilization split on a server error, outbound QA scorecards. Not committed, tagged,
-or installed; v0.4.0 is still the installed release)
+or installed; v0.4.0 is still the installed release. Committed locally, not pushed)
 
 ## Goal
 
@@ -41,7 +41,7 @@ inline rows; done), `~/.claude/plans/c-users-justin-schmidt-downloads-online-foa
 | Install v0.4.0 in Claude Desktop | done before 2026-10-22 (date not recorded): the transcript tools show up in the connector |
 | Tag and GitHub Release | done: `v0.4.0` 2026-10-22 (`v0.3.0` 2026-09-30, `v0.2.0` before it; v0.1.0 was never released) |
 
-## v0.5.0 (built 2026-11-11, not committed, not installed)
+## v0.5.0 (built and committed 2026-11-11; not pushed, tagged, or installed)
 
 From a probe rerun and a read of 103 past tool calls (live findings: `docs/netic-api.md`,
 2026-11-11). Built by two Opus sub-agents, reviewed here.
@@ -76,7 +76,7 @@ Left for later:
 
 ## Next actions, in order
 
-0. Commit v0.5.0, run `npm run smoke` on nash, blue, and ferg, install
+0. Push v0.5.0, run `npm run smoke` on nash, blue, and ferg, install
    `dist/hbsg-netic-0.5.0.mcpb` in Claude Desktop, then tag and release.
 1. Try v0.4.0 in Claude Desktop: "classify last week's NASH escalations by what the caller
    wanted" (needs a NASH Calls Drill Down CSV in Downloads).
