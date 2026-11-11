@@ -2,9 +2,9 @@
 
 Handoff state for HBSG-Netic-MCP.
 
-**Last updated:** 2026-11-11 (v0.5.0 built and smoke-tested on stl: visible columns and
-warnings, utilization split on a server error, outbound QA scorecards. Not committed, tagged,
-or installed; v0.4.0 is still the installed release. Committed locally, not pushed)
+**Last updated:** 2026-11-11 (v0.5.0 pushed, tagged, and released: visible columns and
+warnings, utilization split on a server error, outbound QA scorecards. Smoke passes on all
+four tenants. Not yet installed in Claude Desktop; v0.4.0 is still installed)
 
 ## Goal
 
@@ -39,9 +39,9 @@ inline rows; done), `~/.claude/plans/c-users-justin-schmidt-downloads-online-foa
 | Install the .mcpb in Claude Desktop and try it | done 2026-09-29: installed over v0.1.0, works, rows inline |
 | Install v0.3.0 in Claude Desktop | done 2026-09-30: installed over v0.2.0, both test questions answered correctly |
 | Install v0.4.0 in Claude Desktop | done before 2026-10-22 (date not recorded): the transcript tools show up in the connector |
-| Tag and GitHub Release | done: `v0.4.0` 2026-10-22 (`v0.3.0` 2026-09-30, `v0.2.0` before it; v0.1.0 was never released) |
+| Tag and GitHub Release | done: `v0.5.0` 2026-11-11 (`v0.4.0` 2026-10-22, `v0.3.0` 2026-09-30, `v0.2.0` before it; v0.1.0 was never released) |
 
-## v0.5.0 (built and committed 2026-11-11; not pushed, tagged, or installed)
+## v0.5.0 (released 2026-11-11; not yet installed)
 
 From a probe rerun and a read of 103 past tool calls (live findings: `docs/netic-api.md`,
 2026-11-11). Built by two Opus sub-agents, reviewed here.
@@ -60,7 +60,9 @@ From a probe rerun and a read of 103 past tool calls (live findings: `docs/netic
   report; derived report `outbound_scorecard_items` (count and export); the transcript tools
   take `source=outbound`.
 - Verified: `npm test` 208 pass; `npm run smoke -- stl` passes with new checks for all three.
-  Not run live on nash, blue, or ferg.
+  `npm run smoke` also passes on nash, blue, and ferg (2026-11-11); blue's 09-10 to 09-23
+  utilization window needed 3 splits (7 requests). Scorecards cover 37 to 58% of outbound
+  calls per tenant for 11-04 to 11-10.
 
 Left for later:
 
@@ -76,15 +78,15 @@ Left for later:
 
 ## Next actions, in order
 
-0. Push v0.5.0, run `npm run smoke` on nash, blue, and ferg, install
-   `dist/hbsg-netic-0.5.0.mcpb` in Claude Desktop, then tag and release.
+0. Install `dist/hbsg-netic-0.5.0.mcpb` in Claude Desktop over v0.4.0 and try: "average
+   outbound QA score by CSR for NASH last week, and which scorecard items score lowest?"
 1. Try v0.4.0 in Claude Desktop: "classify last week's NASH escalations by what the caller
    wanted" (needs a NASH Calls Drill Down CSV in Downloads).
 2. Send Netic the asks in `docs/netic-requests.md` (transcripts in the API, interaction id in
    the CSVs, text conversations, scheduler-bookings timeouts). When they ship transcripts,
    `npm run probe` shows it under `transcriptKeys` and the tools switch to the API on their own.
 3. Share the release with the team:
-   https://github.com/HoffmannBros/HBSG-Netic-MCP/releases/tag/v0.4.0 (v0.2.0 and v0.3.0
+   https://github.com/HoffmannBros/HBSG-Netic-MCP/releases/tag/v0.5.0 (v0.2.0 to v0.4.0
    were never announced either).
 4. Build the Cowork daily bounced digest on top of `netic_get_scheduler_leads` (`booked=no,
    exclude_recovered=true, start=end=yesterday`).
