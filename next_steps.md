@@ -2,7 +2,7 @@
 
 Handoff state for HBSG-Netic-MCP.
 
-**Last updated:** 2026-11-11 (v0.5.0 pushed, tagged, and released: visible columns and
+**Last updated:** 2026-11-17 (inbound call-scoring investigated, nothing built; before that: v0.5.0 pushed, tagged, and released: visible columns and
 warnings, utilization split on a server error, outbound QA scorecards. Smoke passes on all
 four tenants. Not yet installed in Claude Desktop; v0.4.0 is still installed)
 
@@ -125,6 +125,21 @@ Left for later:
 - `netic_get_interactions` with a narrow `where` over a month walks 100-row pages and can pass
   the MCP client's 60 s timeout; `netic_export` with the same `where` uses 5000-row pages.
 - Global `core.autocrlf` is on; `.gitattributes` keeps `*.sh` LF so `pack.sh` runs.
+
+- Inbound CSR call scores (2026-11-17): the dashboard Call Scoring page reads
+  `/api/dashboard/enterprise/call-scoring/*` on `hoffmann.netic.ai` with an httpOnly login
+  cookie; the active tenant comes from the session, not the URL. A tenant token gets 401 on
+  both hosts. No export button on Overview, CXR Leaderboard, or Call Review. Guessed public
+  paths (`calls/inbound`, `call-scoring/calls`, `calls/scores`) are 404, and
+  `calls/outbound` ignores `direction`. Endpoints seen (all GET): `calls?limit&date_from&
+  date_to&sort_by&sort_order&is_flagged` (cursor paged: `data`, `next_cursor`,
+  `pageInfo.total`; rows have `call_score_id`, `rubric_id`, `created_at`, rep
+  `first_name`/`last_name`, `is_lead`, `is_booked`, `is_flagged`, `is_excused`,
+  `is_all_na`, `summary`, `score`, `call_duration`), `calls/{id}` (adds `transcript`,
+  `customerPhone`, `crm.callId`, `aggregateScore`, `sections[].parameters[]` with
+  `weight`, `score`, `llmReason`, `isNotApplicable`), `rubrics`, `rubric-groups`
+  (`call_direction`), `aggregate`, `tenant/parameter-performance`,
+  `tenant/score-time-series`. The ask to Netic is item 5 in `docs/netic-requests.md`.
 
 ## Decisions worth knowing
 
